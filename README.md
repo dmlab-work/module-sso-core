@@ -2,8 +2,7 @@
 
 > Shared OIDC engine for the DMLab SSO suite — the single dependency every login product builds on.
 
-[![CI](https://github.com/dmlab-work/module-sso-core/actions/workflows/ci.yml/badge.svg)](https://github.com/dmlab-work/module-sso-core/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/dmlab-work/module-sso-core/graph/badge.svg)](https://codecov.io/gh/dmlab-work/module-sso-core) [![Packagist](https://img.shields.io/packagist/dt/dmlab/module-sso-core)](https://packagist.org/packages/dmlab/module-sso-core)
-![License](https://img.shields.io/badge/license-OSL--3.0-green) ![Magento](https://img.shields.io/badge/Magento-2.4-orange) ![PHP](https://img.shields.io/badge/PHP-8.3--8.5-blue) ![Version](https://img.shields.io/badge/version-0.2.0-lightgrey)
+[![CI](https://github.com/dmlab-work/module-sso-core/actions/workflows/ci.yml/badge.svg)](https://github.com/dmlab-work/module-sso-core/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/dmlab-work/module-sso-core/graph/badge.svg)](https://codecov.io/gh/dmlab-work/module-sso-core) [![Packagist Version](https://img.shields.io/packagist/v/dmlab/module-sso-core)](https://packagist.org/packages/dmlab/module-sso-core) [![Downloads](https://img.shields.io/packagist/dt/dmlab/module-sso-core)](https://packagist.org/packages/dmlab/module-sso-core) [![PHP](https://img.shields.io/packagist/dependency-v/dmlab/module-sso-core/php)](https://packagist.org/packages/dmlab/module-sso-core) [![License](https://img.shields.io/packagist/l/dmlab/module-sso-core)](LICENSE) ![Magento](https://img.shields.io/badge/Magento-2.4-orange)
 
 The shared OIDC/SSO engine for the DMLab identity suite. It is installed
 transitively by every login product (`admin-sso-okta`, `customer-sso-okta`, ...),
