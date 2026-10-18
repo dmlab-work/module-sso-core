@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -8,6 +9,7 @@ namespace DmLab\SsoCore\Model\Oidc;
 
 use DmLab\SsoCore\Exception\DiscoveryException;
 use Magento\Framework\Cache\FrontendInterface;
+use Magento\Framework\HTTP\ClientFactory;
 use Magento\Framework\HTTP\ClientInterface;
 use Magento\Framework\Serialize\SerializerInterface;
 
@@ -18,6 +20,8 @@ use Magento\Framework\Serialize\SerializerInterface;
 class DiscoveryClient
 {
     private const CACHE_PREFIX = 'dmlab_ssocore_oidc_discovery_';
+
+    private const WELL_KNOWN_SUFFIX = '/.well-known/openid-configuration';
 
     /**
      * Discovery keys required to drive the OIDC flow.
@@ -40,28 +44,36 @@ class DiscoveryClient
     ];
 
     /**
-     * Inject HTTP client, cache, serializer, and cache lifetime.
+     * Inject HTTP client factory, cache, serializer, cache lifetime, and timeouts (seconds).
      *
-     * @param ClientInterface $httpClient
+     * @param ClientFactory $httpClientFactory
      * @param FrontendInterface $cache
      * @param SerializerInterface $serializer
      * @param int $cacheLifetime
+     * @param int $connectTimeout
+     * @param int $timeout
      */
     public function __construct(
-        private readonly ClientInterface $httpClient,
+        private readonly ClientFactory $httpClientFactory,
         private readonly FrontendInterface $cache,
         private readonly SerializerInterface $serializer,
-        private readonly int $cacheLifetime = 3600
+        private readonly int $cacheLifetime = 3600,
+        private readonly int $connectTimeout = 5,
+        private readonly int $timeout = 10
     ) {
     }
 
     /**
      * Resolve provider metadata for the given discovery URL, using the cache when warm.
      *
+     * With `$requireIssuerMatch`, a standard `.well-known` URL must be prefixed by the
+     * document's `issuer`, minus a trailing `/` (OIDC Discovery §4.1, §4.3).
+     *
      * @param string $discoveryUrl
+     * @param bool $requireIssuerMatch
      * @throws DiscoveryException
      */
-    public function discover(string $discoveryUrl): ProviderMetadata
+    public function discover(string $discoveryUrl, bool $requireIssuerMatch = true): ProviderMetadata
     {
         $this->assertHttps($discoveryUrl, 'discovery URL');
 
@@ -69,11 +81,19 @@ class DiscoveryClient
 
         $cached = $this->cache->load($cacheId);
         if (is_string($cached) && $cached !== '') {
-            return $this->parse($cached);
+            $metadata = $this->parse($cached);
+            if ($requireIssuerMatch) {
+                $this->assertIssuerMatches($discoveryUrl, $metadata->getIssuer());
+            }
+
+            return $metadata;
         }
 
         $body = $this->fetch($discoveryUrl);
         $metadata = $this->parse($body);
+        if ($requireIssuerMatch) {
+            $this->assertIssuerMatches($discoveryUrl, $metadata->getIssuer());
+        }
         $this->cache->save($body, $cacheId, [], $this->cacheLifetime);
 
         return $metadata;
@@ -87,8 +107,9 @@ class DiscoveryClient
      */
     private function fetch(string $discoveryUrl): string
     {
+        $httpClient = $this->createHttpClient();
         try {
-            $this->httpClient->get($discoveryUrl);
+            $httpClient->get($discoveryUrl);
         } catch (\Throwable $e) {
             throw new DiscoveryException(
                 'Failed to fetch OIDC discovery document: ' . $e->getMessage(),
@@ -97,14 +118,27 @@ class DiscoveryClient
             );
         }
 
-        $status = (int)$this->httpClient->getStatus();
+        $status = (int)$httpClient->getStatus();
         if ($status !== 200) {
             throw new DiscoveryException(
                 sprintf('OIDC discovery request returned HTTP %d for "%s".', $status, $discoveryUrl)
             );
         }
 
-        return (string)$this->httpClient->getBody();
+        return (string)$httpClient->getBody();
+    }
+
+    /**
+     * Create a fresh, bounded, HTTPS-only HTTP client for one request.
+     */
+    private function createHttpClient(): ClientInterface
+    {
+        $client = $this->httpClientFactory->create();
+        $client->setTimeout($this->timeout);
+        $client->setOption(CURLOPT_CONNECTTIMEOUT, $this->connectTimeout);
+        $client->setOption(CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+
+        return $client;
     }
 
     /**
@@ -143,6 +177,28 @@ class DiscoveryClient
             $data['token_endpoint'],
             $data['jwks_uri']
         );
+    }
+
+    /**
+     * Assert the issuer equals the discovery URL prefix; non-standard URLs are skipped.
+     *
+     * @param string $discoveryUrl
+     * @param string $issuer
+     * @throws DiscoveryException
+     */
+    private function assertIssuerMatches(string $discoveryUrl, string $issuer): void
+    {
+        if (!str_ends_with($discoveryUrl, self::WELL_KNOWN_SUFFIX)) {
+            return;
+        }
+
+        $expected = substr($discoveryUrl, 0, -strlen(self::WELL_KNOWN_SUFFIX));
+        // §4.1: a trailing slash is removed from the issuer before the suffix is appended.
+        if (rtrim($issuer, '/') !== $expected) {
+            throw new DiscoveryException(
+                sprintf('OIDC discovery issuer "%s" does not match expected "%s".', $issuer, $expected)
+            );
+        }
     }
 
     /**

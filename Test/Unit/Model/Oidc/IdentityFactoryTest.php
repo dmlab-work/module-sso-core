@@ -1,13 +1,16 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
 namespace DmLab\SsoCore\Test\Unit\Model\Oidc;
 
+use DmLab\SsoCore\Api\EmailVerificationResolverInterface;
 use DmLab\SsoCore\Api\ProviderPresetInterface;
 use DmLab\SsoCore\Model\Oidc\IdentityFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class IdentityFactoryTest extends TestCase
@@ -166,5 +169,152 @@ class IdentityFactoryTest extends TestCase
         );
 
         self::assertSame(['a', 'b'], $identity->getGroups());
+    }
+
+    /**
+     * @return array<string,array{mixed,bool}>
+     */
+    public static function emailVerifiedClaimProvider(): array
+    {
+        return [
+            'bool true' => [true, true],
+            'string true' => ['true', true],
+            'string TRUE' => ['TRUE', true],
+            'bool false' => [false, false],
+            'string false' => ['false', false],
+            'int 1' => [1, false],
+            'string 1' => ['1', false],
+            'array' => [[true], false],
+            'null' => [null, false],
+        ];
+    }
+
+    #[DataProvider('emailVerifiedClaimProvider')]
+    public function testEmailVerifiedClaimNormalization(mixed $claim, bool $expected): void
+    {
+        $identity = $this->factory->create(
+            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => $claim],
+            $this->preset()
+        );
+
+        self::assertSame($expected, $identity->isEmailVerified());
+    }
+
+    public function testEmailVerifiedAbsentIsFalse(): void
+    {
+        $identity = $this->factory->create(['sub' => 's', 'email' => 'jane@example.com'], $this->preset());
+
+        self::assertFalse($identity->isEmailVerified());
+    }
+
+    public function testEmailVerifiedWithoutEmailIsFalse(): void
+    {
+        $identity = $this->factory->create(['sub' => 's', 'email_verified' => true], $this->preset());
+
+        self::assertFalse($identity->isEmailVerified());
+    }
+
+    public function testResolverTrueOverridesStandardClaim(): void
+    {
+        $identity = $this->factory->create(
+            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => false],
+            $this->resolvingPreset(true)
+        );
+
+        self::assertTrue($identity->isEmailVerified());
+    }
+
+    public function testResolverFalseOverridesStandardClaim(): void
+    {
+        $identity = $this->factory->create(
+            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => true],
+            $this->resolvingPreset(false)
+        );
+
+        self::assertFalse($identity->isEmailVerified());
+    }
+
+    public function testResolverNullFallsBackToStandardClaim(): void
+    {
+        $identity = $this->factory->create(
+            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => true],
+            $this->resolvingPreset(null)
+        );
+
+        self::assertTrue($identity->isEmailVerified());
+    }
+
+    public function testResolverReceivesClaims(): void
+    {
+        $preset = $this->resolvingPreset(true);
+        $claims = ['sub' => 's', 'email' => 'jane@example.com', 'xms_edov' => true];
+
+        $this->factory->create($claims, $preset);
+
+        self::assertSame($claims, $preset->receivedClaims);
+    }
+
+    public function testResolverTrueWithoutEmailIsFalse(): void
+    {
+        $identity = $this->factory->create(['sub' => 's'], $this->resolvingPreset(true));
+
+        self::assertFalse($identity->isEmailVerified());
+    }
+
+    private function resolvingPreset(
+        ?bool $resolved
+    ): ProviderPresetInterface&EmailVerificationResolverInterface {
+        return new class ($resolved) implements ProviderPresetInterface, EmailVerificationResolverInterface {
+            /**
+             * @var array<string,mixed>|null
+             */
+            public ?array $receivedClaims = null;
+
+            public function __construct(private readonly ?bool $resolved)
+            {
+            }
+
+            public function resolveEmailVerified(array $claims): ?bool
+            {
+                $this->receivedClaims = $claims;
+
+                return $this->resolved;
+            }
+
+            public function getCode(): string
+            {
+                return 'azure';
+            }
+
+            public function getLabel(): string
+            {
+                return 'Azure';
+            }
+
+            public function buildDiscoveryUrl(array $config): string
+            {
+                return 'https://example.test/.well-known/openid-configuration';
+            }
+
+            public function getDefaultScopes(): array
+            {
+                return ['openid', 'profile', 'email'];
+            }
+
+            public function getGroupsClaim(): ?string
+            {
+                return 'groups';
+            }
+
+            public function getButtonLabel(): string
+            {
+                return 'Sign in with Azure';
+            }
+
+            public function getButtonIconUrl(): ?string
+            {
+                return null;
+            }
+        };
     }
 }

@@ -1,12 +1,14 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
 namespace DmLab\SsoCore\Model\Oidc;
 
 use DmLab\SsoCore\Api\Data\IdentityInterface;
+use DmLab\SsoCore\Api\EmailVerificationResolverInterface;
 use DmLab\SsoCore\Api\ProviderPresetInterface;
 use DmLab\SsoCore\Model\Data\Identity;
 
@@ -14,7 +16,8 @@ use DmLab\SsoCore\Model\Data\Identity;
  * Normalizes a validated OIDC claim set into a provider-agnostic {@see Identity}.
  *
  * `sub` is required; `email` and `name` are optional; groups are read from the
- * preset's configured groups claim and coerced to a `string[]`.
+ * preset's configured groups claim and coerced to a `string[]`. Email verification
+ * comes from the preset's {@see EmailVerificationResolverInterface}, else `email_verified`.
  */
 class IdentityFactory
 {
@@ -36,8 +39,29 @@ class IdentityFactory
             $subjectId,
             $this->stringOrNull($claims['email'] ?? null),
             $this->stringOrNull($claims['name'] ?? null),
-            $this->extractGroups($claims, $preset->getGroupsClaim())
+            $this->extractGroups($claims, $preset->getGroupsClaim()),
+            $this->resolveEmailVerified($claims, $preset)
         );
+    }
+
+    /**
+     * Resolve email verification: preset resolver first, else strict `email_verified` true / "true".
+     *
+     * @param array<string,mixed> $claims
+     * @param ProviderPresetInterface $preset
+     */
+    private function resolveEmailVerified(array $claims, ProviderPresetInterface $preset): bool
+    {
+        if ($preset instanceof EmailVerificationResolverInterface) {
+            $resolved = $preset->resolveEmailVerified($claims);
+            if ($resolved !== null) {
+                return $resolved;
+            }
+        }
+
+        $value = $claims['email_verified'] ?? null;
+
+        return $value === true || (is_string($value) && strtolower($value) === 'true');
     }
 
     /**

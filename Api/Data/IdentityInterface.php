@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -23,6 +24,11 @@ interface IdentityInterface
      * Email address, or null when the IdP did not release it.
      */
     public function getEmail(): ?string;
+
+    /**
+     * Whether the IdP asserted the email as verified; false when there is no email or no assertion.
+     */
+    public function isEmailVerified(): bool;
 
     /**
      * Display name, or null when the IdP did not release it.

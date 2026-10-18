@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -9,6 +10,7 @@ namespace DmLab\SsoCore\Test\Unit\Model\Oidc;
 use DmLab\SsoCore\Exception\TokenException;
 use DmLab\SsoCore\Model\Oidc\TokenClient;
 use DmLab\SsoCore\Model\Oidc\TokenResponse;
+use Magento\Framework\HTTP\ClientFactory;
 use Magento\Framework\HTTP\ClientInterface;
 use Magento\Framework\Serialize\Serializer\Json;
 use PHPUnit\Framework\TestCase;
@@ -23,7 +25,7 @@ class TokenClientTest extends TestCase
 
     private function client(ClientInterface $http): TokenClient
     {
-        return new TokenClient($http, new Json());
+        return new TokenClient($this->factory($http), new Json());
     }
 
     /**
@@ -143,5 +145,74 @@ class TokenClientTest extends TestCase
         $http->method('getBody')->willReturn($body);
 
         return $http;
+    }
+
+    public function testCreatesBoundedHttpsClientPerRequestWithAcceptHeader(): void
+    {
+        $first = $this->recordingHttp($log1, $this->body());
+        $second = $this->recordingHttp($log2, $this->body());
+
+        $factory = $this->createMock(ClientFactory::class);
+        $factory->expects(self::exactly(2))->method('create')->willReturnOnConsecutiveCalls($first, $second);
+
+        $client = new TokenClient($factory, new Json());
+        $this->exchange($client);
+        $this->exchange($client);
+
+        $this->assertBounded($log1);
+        $this->assertBounded($log2);
+        self::assertSame(['Accept' => 'application/json'], $log1['headers']);
+        self::assertSame(['Accept' => 'application/json'], $log2['headers']);
+    }
+
+    public function testAppliesConfiguredTimeouts(): void
+    {
+        $http = $this->recordingHttp($log, $this->body());
+
+        $this->exchange(new TokenClient($this->factory($http), new Json(), 2, 7));
+
+        $this->assertBounded($log, 2, 7);
+    }
+
+    /**
+     * Client mock that records timeout/options/headers and answers one request.
+     *
+     * @param array<string, mixed>|null $log
+     */
+    private function recordingHttp(?array &$log, string $body, int $status = 200): ClientInterface
+    {
+        $log = ['timeout' => null, 'options' => [], 'headers' => []];
+        $http = $this->createStub(ClientInterface::class);
+        $http->method('setTimeout')->willReturnCallback(function ($value) use (&$log): void {
+            $log['timeout'] = $value;
+        });
+        $http->method('setOption')->willReturnCallback(function ($key, $value) use (&$log): void {
+            $log['options'][$key] = $value;
+        });
+        $http->method('addHeader')->willReturnCallback(function ($name, $value) use (&$log): void {
+            $log['headers'][$name] = $value;
+        });
+        $http->method('getStatus')->willReturn($status);
+        $http->method('getBody')->willReturn($body);
+
+        return $http;
+    }
+
+    /**
+     * @param array<string, mixed> $log
+     */
+    private function assertBounded(array $log, int $connectTimeout = 5, int $timeout = 10): void
+    {
+        self::assertSame($timeout, $log['timeout']);
+        self::assertSame($connectTimeout, $log['options'][CURLOPT_CONNECTTIMEOUT] ?? null);
+        self::assertSame(CURLPROTO_HTTPS, $log['options'][CURLOPT_PROTOCOLS] ?? null);
+    }
+
+    private function factory(ClientInterface $http): ClientFactory
+    {
+        $factory = $this->createStub(ClientFactory::class);
+        $factory->method('create')->willReturn($http);
+
+        return $factory;
     }
 }

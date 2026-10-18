@@ -1,12 +1,14 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
 namespace DmLab\SsoCore\Model\Oidc;
 
 use DmLab\SsoCore\Exception\TokenException;
+use Magento\Framework\HTTP\ClientFactory;
 use Magento\Framework\HTTP\ClientInterface;
 use Magento\Framework\Serialize\SerializerInterface;
 
@@ -20,14 +22,18 @@ class TokenClient
     private const GRANT_TYPE = 'authorization_code';
 
     /**
-     * Inject the HTTP client and JSON serializer.
+     * Inject the HTTP client factory, JSON serializer, and timeouts (seconds).
      *
-     * @param ClientInterface $httpClient
+     * @param ClientFactory $httpClientFactory
      * @param SerializerInterface $serializer
+     * @param int $connectTimeout
+     * @param int $timeout
      */
     public function __construct(
-        private readonly ClientInterface $httpClient,
-        private readonly SerializerInterface $serializer
+        private readonly ClientFactory $httpClientFactory,
+        private readonly SerializerInterface $serializer,
+        private readonly int $connectTimeout = 5,
+        private readonly int $timeout = 10
     ) {
     }
 
@@ -61,16 +67,17 @@ class TokenClient
             $params['client_secret'] = $clientSecret;
         }
 
-        $this->httpClient->addHeader('Accept', 'application/json');
+        $httpClient = $this->createHttpClient();
+        $httpClient->addHeader('Accept', 'application/json');
 
         try {
-            $this->httpClient->post($tokenEndpoint, $params);
+            $httpClient->post($tokenEndpoint, $params);
         } catch (\Throwable $e) {
             throw new TokenException('Failed to reach the OIDC token endpoint: ' . $e->getMessage(), 0, $e);
         }
 
-        $status = (int)$this->httpClient->getStatus();
-        $body = (string)$this->httpClient->getBody();
+        $status = (int)$httpClient->getStatus();
+        $body = (string)$httpClient->getBody();
         $data = $this->decode($body);
 
         if ($status !== 200) {
@@ -89,6 +96,19 @@ class TokenClient
             $this->stringOrNull($data, 'refresh_token'),
             $this->stringOrNull($data, 'scope')
         );
+    }
+
+    /**
+     * Create a fresh, bounded, HTTPS-only HTTP client for one request.
+     */
+    private function createHttpClient(): ClientInterface
+    {
+        $client = $this->httpClientFactory->create();
+        $client->setTimeout($this->timeout);
+        $client->setOption(CURLOPT_CONNECTTIMEOUT, $this->connectTimeout);
+        $client->setOption(CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+
+        return $client;
     }
 
     /**

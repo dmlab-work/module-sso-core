@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -25,12 +26,14 @@ class Identity implements IdentityInterface
      * @param string|null $email
      * @param string|null $name
      * @param string[] $groups
+     * @param bool $emailVerified
      */
     public function __construct(
         private readonly string $subjectId,
         private readonly ?string $email = null,
         private readonly ?string $name = null,
-        array $groups = []
+        array $groups = [],
+        private readonly bool $emailVerified = false
     ) {
         $this->groups = array_values(array_map('strval', $groups));
     }
@@ -49,6 +52,14 @@ class Identity implements IdentityInterface
     public function getEmail(): ?string
     {
         return $this->email;
+    }
+
+    /**
+     * Whether the email is verified; always false without an email.
+     */
+    public function isEmailVerified(): bool
+    {
+        return $this->email !== null && $this->email !== '' && $this->emailVerified;
     }
 
     /**

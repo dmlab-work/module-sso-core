@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -20,7 +21,7 @@ use Magento\Framework\Serialize\SerializerInterface;
 
 /**
  * Validates an OIDC ID token: verifies the JWS signature against the IdP's JWKS,
- * then checks the `iss`, `aud`, `exp`, and `nonce` claims. Returns the validated
+ * then checks the `iss`, `aud`/`azp`, `exp`, `iat`, `nbf`, and `nonce` claims. Returns the validated
  * claim set for the normalizer to consume.
  */
 class IdTokenValidator
@@ -32,7 +33,7 @@ class IdTokenValidator
     private const ALLOWED_ALGORITHMS = [RS256::class, RS384::class, RS512::class, ES256::class, PS256::class];
 
     /**
-     * Clock skew allowance (seconds) applied to `exp`.
+     * Clock skew allowance (seconds) applied to `exp`, `iat`, and `nbf`.
      */
     private const LEEWAY = 60;
 
@@ -88,6 +89,8 @@ class IdTokenValidator
         $this->assertIssuer($claims, $expectedIssuer);
         $this->assertAudience($claims, $expectedAudience);
         $this->assertNotExpired($claims, $now);
+        $this->assertIssuedAt($claims, $now);
+        $this->assertNotBefore($claims, $now);
         $this->assertNonce($claims, $expectedNonce);
 
         return $claims;
@@ -186,13 +189,63 @@ class IdTokenValidator
     private function assertNotExpired(array $claims, int $now): void
     {
         $exp = $claims['exp'] ?? null;
-        if (!is_int($exp) && !(is_string($exp) && ctype_digit($exp))) {
+        if (!$this->isNumericDate($exp)) {
             throw new IdTokenValidationException('ID token is missing a valid "exp" claim.');
         }
 
         if ((int)$exp + self::LEEWAY <= $now) {
             throw new IdTokenValidationException('ID token has expired.');
         }
+    }
+
+    /**
+     * Assert the required `iat` claim is not in the future (with leeway).
+     *
+     * @param array<string,mixed> $claims
+     * @param int $now
+     */
+    private function assertIssuedAt(array $claims, int $now): void
+    {
+        $iat = $claims['iat'] ?? null;
+        if (!$this->isNumericDate($iat)) {
+            throw new IdTokenValidationException('ID token is missing a valid "iat" claim.');
+        }
+
+        if ((int)$iat > $now + self::LEEWAY) {
+            throw new IdTokenValidationException('ID token "iat" is in the future.');
+        }
+    }
+
+    /**
+     * Assert the optional `nbf` claim, when present, is not in the future (with leeway).
+     *
+     * @param array<string,mixed> $claims
+     * @param int $now
+     */
+    private function assertNotBefore(array $claims, int $now): void
+    {
+        if (!array_key_exists('nbf', $claims)) {
+            return;
+        }
+
+        $nbf = $claims['nbf'];
+        if (!$this->isNumericDate($nbf)) {
+            throw new IdTokenValidationException('ID token has an invalid "nbf" claim.');
+        }
+
+        if ((int)$nbf > $now + self::LEEWAY) {
+            throw new IdTokenValidationException('ID token is not valid yet ("nbf").');
+        }
+    }
+
+    /**
+     * Check a claim is an integer or a digit-only string.
+     *
+     * @param mixed $value
+     */
+    private function isNumericDate(mixed $value): bool
+    {
+        return is_int($value) || (is_string($value) && ctype_digit($value));
     }
 
     /**

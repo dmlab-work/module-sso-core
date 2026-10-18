@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -233,6 +234,77 @@ class IdTokenValidatorTest extends TestCase
         $this->expectExceptionMessage('exp');
 
         $this->validate($this->mint($claims));
+    }
+
+    public function testAcceptsNumericStringIat(): void
+    {
+        $claims = $this->validate($this->mint($this->claims(['iat' => (string)self::NOW])));
+
+        self::assertSame((string)self::NOW, $claims['iat']);
+    }
+
+    public function testRejectsMissingIat(): void
+    {
+        $claims = $this->claims();
+        unset($claims['iat']);
+
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('iat');
+
+        $this->validate($this->mint($claims));
+    }
+
+    public function testRejectsNonNumericIat(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('iat');
+
+        $this->validate($this->mint($this->claims(['iat' => '2023-11-14T22:13:20Z'])));
+    }
+
+    public function testAcceptsIatInFutureWithinLeeway(): void
+    {
+        $claims = $this->validate($this->mint($this->claims(['iat' => self::NOW + 60])));
+
+        self::assertSame(self::NOW + 60, $claims['iat']);
+    }
+
+    public function testRejectsIatInFutureBeyondLeeway(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('"iat" is in the future');
+
+        $this->validate($this->mint($this->claims(['iat' => self::NOW + 61])));
+    }
+
+    public function testAcceptsAbsentNbf(): void
+    {
+        $claims = $this->validate($this->mint($this->claims()));
+
+        self::assertArrayNotHasKey('nbf', $claims);
+    }
+
+    public function testAcceptsNbfInFutureWithinLeeway(): void
+    {
+        $claims = $this->validate($this->mint($this->claims(['nbf' => self::NOW + 60])));
+
+        self::assertSame(self::NOW + 60, $claims['nbf']);
+    }
+
+    public function testRejectsNbfInFutureBeyondLeeway(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('nbf');
+
+        $this->validate($this->mint($this->claims(['nbf' => self::NOW + 61])));
+    }
+
+    public function testRejectsNonNumericNbf(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('nbf');
+
+        $this->validate($this->mint($this->claims(['nbf' => null])));
     }
 
     public function testRejectsNonceMismatch(): void

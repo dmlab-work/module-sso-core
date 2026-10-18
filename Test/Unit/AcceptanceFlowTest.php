@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -11,6 +12,7 @@ use DmLab\SsoCore\Model\Mapping\MappingEngine;
 use DmLab\SsoCore\Model\Oidc\AuthorizationRequestFactory;
 use DmLab\SsoCore\Model\Oidc\IdentityFactory;
 use DmLab\SsoCore\Model\Oidc\IdTokenValidator;
+use DmLab\SsoCore\Model\Oidc\JwksClient;
 use Jose\Component\Core\AlgorithmManager;
 use Jose\Component\Core\JWK;
 use Jose\Component\Core\JWKSet;
@@ -18,6 +20,9 @@ use Jose\Component\KeyManagement\JWKFactory;
 use Jose\Component\Signature\Algorithm\RS256;
 use Jose\Component\Signature\JWSBuilder;
 use Jose\Component\Signature\Serializer\CompactSerializer;
+use Magento\Framework\Cache\FrontendInterface;
+use Magento\Framework\HTTP\ClientFactory;
+use Magento\Framework\HTTP\ClientInterface;
 use Magento\Framework\Math\Random;
 use Magento\Framework\Serialize\Serializer\Json;
 use PHPUnit\Framework\TestCase;
@@ -34,6 +39,7 @@ class AcceptanceFlowTest extends TestCase
     private const AUDIENCE = 'client-abc';
     private const REDIRECT_URI = 'https://magento.loc/sso/callback';
     private const AUTH_ENDPOINT = 'https://dev.okta.com/oauth2/v1/authorize';
+    private const JWKS_URI = 'https://dev.okta.com/oauth2/v1/keys';
     private const NOW = 1_700_000_000;
 
     /**
@@ -144,6 +150,48 @@ class AcceptanceFlowTest extends TestCase
         self::assertSame(['general'], $roles);
     }
 
+    public function testKeyRotationValidatesAfterJwksRefetch(): void
+    {
+        $rotatedKey = JWKFactory::createRSAKey(2048, ['alg' => 'RS256', 'use' => 'sig', 'kid' => 'k2']);
+
+        // Cache still holds the pre-rotation set (k1 only); the IdP now serves k2.
+        $store = ['dmlab_ssocore_oidc_jwks_' . hash('sha256', self::JWKS_URI) => (string)json_encode($this->keySet)];
+        $cache = $this->createStub(FrontendInterface::class);
+        $cache->method('load')->willReturnCallback(static fn(string $id) => $store[$id] ?? false);
+        $cache->method('save')->willReturnCallback(static function ($data, $id) use (&$store): bool {
+            $store[$id] = $data;
+
+            return true;
+        });
+
+        $http = $this->createStub(ClientInterface::class);
+        $http->method('getStatus')->willReturn(200);
+        $http->method('getBody')->willReturn((string)json_encode(new JWKSet([$rotatedKey->toPublic()])));
+        $factory = $this->createStub(ClientFactory::class);
+        $factory->method('create')->willReturn($http);
+
+        $idToken = $this->mintIdToken([
+            'iss' => self::ISSUER,
+            'aud' => self::AUDIENCE,
+            'sub' => 'okta-user-7',
+            'nonce' => 'nonce-r',
+            'iat' => self::NOW,
+            'exp' => self::NOW + 300,
+        ], $rotatedKey, 'k2');
+
+        $keySet = (new JwksClient($factory, $cache))->getKeySetForToken(self::JWKS_URI, $idToken);
+
+        $claims = (new IdTokenValidator(new Json()))->validate(
+            $idToken,
+            $keySet,
+            self::ISSUER,
+            self::AUDIENCE,
+            'nonce-r',
+            self::NOW
+        );
+        self::assertSame('okta-user-7', $claims['sub']);
+    }
+
     private function preset(): ProviderPresetInterface
     {
         return new class implements ProviderPresetInterface {
@@ -186,13 +234,15 @@ class AcceptanceFlowTest extends TestCase
 
     /**
      * @param array<string, mixed> $claims
+     * @param JWK|null $key defaults to the original signing key
+     * @param string $kid
      */
-    private function mintIdToken(array $claims): string
+    private function mintIdToken(array $claims, ?JWK $key = null, string $kid = 'k1'): string
     {
         $builder = new JWSBuilder(new AlgorithmManager([new RS256()]));
         $jws = $builder->create()
             ->withPayload((string)json_encode($claims), false)
-            ->addSignature($this->privateKey, ['alg' => 'RS256', 'kid' => 'k1'], [])
+            ->addSignature($key ?? $this->privateKey, ['alg' => 'RS256', 'kid' => $kid], [])
             ->build();
 
         return (new CompactSerializer())->serialize($jws, 0);

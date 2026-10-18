@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -45,5 +46,25 @@ class IdentityTest extends TestCase
         $identity = new Identity('sub-1', null, null, [5 => 'a', 9 => 42]);
 
         self::assertSame(['a', '42'], $identity->getGroups());
+    }
+
+    public function testEmailVerifiedDefaultsToFalse(): void
+    {
+        self::assertFalse((new Identity('sub-1', 'user@example.com'))->isEmailVerified());
+    }
+
+    public function testEmailVerifiedTrueWithEmail(): void
+    {
+        self::assertTrue((new Identity('sub-1', 'user@example.com', null, [], true))->isEmailVerified());
+    }
+
+    public function testEmailVerifiedForcedFalseWithoutEmail(): void
+    {
+        self::assertFalse((new Identity('sub-1', null, null, [], true))->isEmailVerified());
+    }
+
+    public function testEmailVerifiedForcedFalseWithEmptyEmail(): void
+    {
+        self::assertFalse((new Identity('sub-1', '', null, [], true))->isEmailVerified());
     }
 }

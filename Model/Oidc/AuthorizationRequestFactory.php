@@ -1,6 +1,7 @@
 <?php
 /**
  * Copyright © DMLab. All rights reserved.
+ * Licensed under the Open Software License version 3.0 (OSL-3.0). See LICENSE.
  */
 declare(strict_types=1);
 
@@ -25,6 +26,20 @@ class AuthorizationRequestFactory
     private const RANDOM_BYTES = 32;
 
     /**
+     * Params owned by the factory; presets must not override them.
+     */
+    private const RESERVED_PARAMS = [
+        'response_type',
+        'client_id',
+        'redirect_uri',
+        'scope',
+        'state',
+        'nonce',
+        'code_challenge',
+        'code_challenge_method',
+    ];
+
+    /**
      * Inject the secure random generator.
      *
      * @param Random $random
@@ -41,13 +56,18 @@ class AuthorizationRequestFactory
      * @param string $clientId
      * @param string $redirectUri
      * @param string[] $scopes
+     * @param array<string,string> $extraParams preset params, e.g. from AuthorizationParamsProviderInterface
+     * @throws \InvalidArgumentException on a reserved key or non-string value in $extraParams
      */
     public function create(
         string $authorizationEndpoint,
         string $clientId,
         string $redirectUri,
-        array $scopes
+        array $scopes,
+        array $extraParams = []
     ): AuthorizationRequest {
+        $this->assertExtraParams($extraParams);
+
         $state = $this->randomToken();
         $nonce = $this->randomToken();
         $codeVerifier = $this->randomToken();
@@ -61,13 +81,35 @@ class AuthorizationRequestFactory
             'nonce' => $nonce,
             'code_challenge' => $this->deriveChallenge($codeVerifier),
             'code_challenge_method' => self::CODE_CHALLENGE_METHOD,
-        ];
+        ] + $extraParams;
 
         $separator = str_contains($authorizationEndpoint, '?') ? '&' : '?';
         $url = $authorizationEndpoint . $separator
             . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
         return new AuthorizationRequest($url, $state, $nonce, $codeVerifier);
+    }
+
+    /**
+     * Reject extra params that override core params or are not strings.
+     *
+     * @param array<mixed> $extraParams
+     * @throws \InvalidArgumentException
+     */
+    private function assertExtraParams(array $extraParams): void
+    {
+        foreach ($extraParams as $key => $value) {
+            if (in_array((string)$key, self::RESERVED_PARAMS, true)) {
+                throw new \InvalidArgumentException(
+                    sprintf('Authorization param "%s" is reserved and cannot be overridden.', $key)
+                );
+            }
+            if (!is_string($value)) {
+                throw new \InvalidArgumentException(
+                    sprintf('Authorization param "%s" must be a string.', $key)
+                );
+            }
+        }
     }
 
     /**
