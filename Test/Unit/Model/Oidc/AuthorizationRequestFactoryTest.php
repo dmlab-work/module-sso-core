@@ -9,7 +9,6 @@ namespace DmLab\SsoCore\Test\Unit\Model\Oidc;
 
 use DmLab\SsoCore\Model\Oidc\AuthorizationRequest;
 use DmLab\SsoCore\Model\Oidc\AuthorizationRequestFactory;
-use Magento\Framework\Math\Random;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -19,9 +18,9 @@ class AuthorizationRequestFactoryTest extends TestCase
     private const CLIENT_ID = 'client-123';
     private const REDIRECT = 'https://magento.loc/sso/callback';
 
-    private function build(?Random $random = null): AuthorizationRequest
+    private function build(): AuthorizationRequest
     {
-        $factory = new AuthorizationRequestFactory($random ?? new Random());
+        $factory = new AuthorizationRequestFactory();
 
         return $factory->create(
             self::ENDPOINT,
@@ -82,6 +81,19 @@ class AuthorizationRequestFactoryTest extends TestCase
         self::assertMatchesRegularExpression('/^[A-Za-z0-9\-_]+$/', $verifier);
     }
 
+    /** Each token is 32 random bytes base64url-encoded exactly once (43 chars), not a re-encoded base64 string. */
+    public function testTokensEncodeThirtyTwoRawBytesOnce(): void
+    {
+        $request = $this->build();
+
+        foreach ([$request->getState(), $request->getNonce(), $request->getCodeVerifier()] as $token) {
+            self::assertSame(43, strlen($token));
+            $raw = base64_decode(strtr($token, '-_', '+/'), true);
+            self::assertIsString($raw);
+            self::assertSame(32, strlen($raw));
+        }
+    }
+
     public function testStateNonceAndVerifierAreDistinctAndRandom(): void
     {
         $first = $this->build();
@@ -109,7 +121,7 @@ class AuthorizationRequestFactoryTest extends TestCase
 
     public function testAppendsToEndpointThatAlreadyHasQuery(): void
     {
-        $factory = new AuthorizationRequestFactory(new Random());
+        $factory = new AuthorizationRequestFactory();
         $request = $factory->create(
             self::ENDPOINT . '?foo=bar',
             self::CLIENT_ID,
@@ -126,7 +138,7 @@ class AuthorizationRequestFactoryTest extends TestCase
 
     public function testExtraParamsAppearRfc3986EncodedAfterCoreParams(): void
     {
-        $factory = new AuthorizationRequestFactory(new Random());
+        $factory = new AuthorizationRequestFactory();
         $request = $factory->create(
             self::ENDPOINT,
             self::CLIENT_ID,
@@ -146,19 +158,22 @@ class AuthorizationRequestFactoryTest extends TestCase
 
     public function testEmptyExtraParamsLeaveUrlUnchanged(): void
     {
-        $random = $this->createStub(Random::class);
-        $random->method('getRandomBytes')->willReturn(str_repeat('a', 32));
-        $factory = new AuthorizationRequestFactory($random);
+        $factory = new AuthorizationRequestFactory();
 
         $without = $factory->create(self::ENDPOINT, self::CLIENT_ID, self::REDIRECT, ['openid']);
         $with = $factory->create(self::ENDPOINT, self::CLIENT_ID, self::REDIRECT, ['openid'], []);
 
-        self::assertSame($without->getUrl(), $with->getUrl());
+        // Tokens are random per call; compare everything else.
+        $random = ['state' => '', 'nonce' => '', 'code_challenge' => ''];
+        self::assertSame(
+            array_merge($this->queryParams($without->getUrl()), $random),
+            array_merge($this->queryParams($with->getUrl()), $random)
+        );
     }
 
     public function testExtraParamsAppendToEndpointWithQuery(): void
     {
-        $factory = new AuthorizationRequestFactory(new Random());
+        $factory = new AuthorizationRequestFactory();
         $request = $factory->create(
             self::ENDPOINT . '?foo=bar',
             self::CLIENT_ID,
@@ -194,7 +209,7 @@ class AuthorizationRequestFactoryTest extends TestCase
     #[DataProvider('reservedParamProvider')]
     public function testReservedExtraParamRejected(string $key): void
     {
-        $factory = new AuthorizationRequestFactory(new Random());
+        $factory = new AuthorizationRequestFactory();
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage($key);
@@ -218,7 +233,7 @@ class AuthorizationRequestFactoryTest extends TestCase
     #[DataProvider('nonStringValueProvider')]
     public function testNonStringExtraParamValueRejected(mixed $value): void
     {
-        $factory = new AuthorizationRequestFactory(new Random());
+        $factory = new AuthorizationRequestFactory();
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('hd');

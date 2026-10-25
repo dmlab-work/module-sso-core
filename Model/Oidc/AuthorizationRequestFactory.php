@@ -7,8 +7,6 @@ declare(strict_types=1);
 
 namespace DmLab\SsoCore\Model\Oidc;
 
-use Magento\Framework\Math\Random;
-
 /**
  * Builds an authorization-code + PKCE authorization request: generates `state`,
  * `nonce`, and the PKCE verifier/challenge (`S256`), then assembles the redirect
@@ -38,16 +36,6 @@ class AuthorizationRequestFactory
         'code_challenge',
         'code_challenge_method',
     ];
-
-    /**
-     * Inject the secure random generator.
-     *
-     * @param Random $random
-     */
-    public function __construct(
-        private readonly Random $random
-    ) {
-    }
 
     /**
      * Build an authorization-code + PKCE authorization request.
@@ -123,11 +111,13 @@ class AuthorizationRequestFactory
     }
 
     /**
-     * Generate a base64url random token.
+     * Generate a base64url token from raw CSPRNG bytes.
+     *
+     * Not Magento's Random::getRandomBytes(): it already returns base64, which would be encoded twice.
      */
     private function randomToken(): string
     {
-        return $this->base64UrlEncode($this->random->getRandomBytes(self::RANDOM_BYTES));
+        return $this->base64UrlEncode(random_bytes(self::RANDOM_BYTES));
     }
 
     /**

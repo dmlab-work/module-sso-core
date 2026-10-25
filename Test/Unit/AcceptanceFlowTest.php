@@ -23,7 +23,6 @@ use Jose\Component\Signature\Serializer\CompactSerializer;
 use Magento\Framework\Cache\FrontendInterface;
 use Magento\Framework\HTTP\ClientFactory;
 use Magento\Framework\HTTP\ClientInterface;
-use Magento\Framework\Math\Random;
 use Magento\Framework\Serialize\Serializer\Json;
 use PHPUnit\Framework\TestCase;
 
@@ -63,7 +62,7 @@ class AcceptanceFlowTest extends TestCase
         $preset = $this->preset();
 
         // 1. Build the authorization request from the preset's scopes + PKCE.
-        $authRequest = (new AuthorizationRequestFactory(new Random()))->create(
+        $authRequest = (new AuthorizationRequestFactory())->create(
             self::AUTH_ENDPOINT,
             self::AUDIENCE,
             self::REDIRECT_URI,
