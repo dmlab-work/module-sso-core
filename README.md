@@ -143,7 +143,7 @@ Stable contracts products depend on. Full method docs live in the interface file
 
 ## Requirements
 
-- Magento Open Source / Adobe Commerce **2.4.x**
+- Magento Open Source / Adobe Commerce **2.4.x** (tested on 2.4.9)
 - PHP **8.3 – 8.5** with `ext-curl`
 - `magento/framework >=103.0`
 - `web-token/jwt-framework ^4.0`
