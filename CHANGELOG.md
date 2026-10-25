@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Fixed: `state`, `nonce` and PKCE `code_verifier` were base64-encoded twice; now 43-char base64url tokens from 32 random bytes.
+- Tested on Magento 2.4.9 and PHP 8.5.
+
 ## 0.2.0
 
 ### Breaking
