@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.2
+
+### Breaking
+
+- `AuthorizationStateInterface` gains `getIssuer()`; conflicts with `dmlab/module-admin-sso` / `dmlab/module-customer-sso` < 0.2.2.
+- `IdentityFactory::create()` requires a non-empty `iss` claim.
+- Token endpoint auth defaults to `client_secret_basic`; `client_secret_post` only when the IdP advertises just that.
+- ID tokens with untrusted extra `aud` values, any `crit` header, or `iat` older than 600s (+60s leeway) are rejected.
+- `discover()` with the issuer match rejects URLs not ending in `/.well-known/openid-configuration`; the discovered `issuer` must be https without query/fragment.
+- `max_age`, `request`, `request_uri` are reserved authorization params.
+- `MappingEngine::resolve()` orders targets by rule order, not IdP group order.
+
+### Added
+
+- `IdentityInterface::getIssuer()`, `hasDistributedClaim()`, `hasDistributedGroups()` (distributed `_claim_names`, e.g. Entra groups overage).
+- `AuthorizationResponseValidator::validateIssuer()` (RFC 9207 `iss`, mix-up defense); `AuthorizationRequestFactory::create()` accepts `$issuer`.
+- `IdTokenValidator::validateForProvider()`: discovered issuer, JWKS and signing algs; one JWKS refetch for kid-less tokens on signature failure. `maxIatAge` di argument.
+- ES384/ES512/PS384/PS512 and EdDSA (with ext-sodium) ID-token signatures, intersected with the discovered algs.
+- `ProviderMetadata` exposes `token_endpoint_auth_methods_supported`, `id_token_signing_alg_values_supported`, `authorization_response_iss_parameter_supported`.
+- Fixed: fractional NumericDate `exp`/`iat`/`nbf` accepted.
+
 ## 0.2.1
 
 - Fixed: `state`, `nonce` and PKCE `code_verifier` were base64-encoded twice; now 43-char base64url tokens from 32 random bytes.

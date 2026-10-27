@@ -2,7 +2,7 @@
     "name": "dmlab/module-sso-core",
     "description": "Shared OIDC/SSO engine for DmLab identity products (generic OIDC client, mapping engine, provider preset contract).",
     "type": "magento2-module",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "license": "OSL-3.0",
     "require": {
         "php": "~8.3.0||~8.4.0||~8.5.0",
@@ -12,6 +12,10 @@
     },
     "require-dev": {
         "phpunit/phpunit": "^12.0"
+    },
+    "conflict": {
+        "dmlab/module-admin-sso": "<0.2.2",
+        "dmlab/module-customer-sso": "<0.2.2"
     },
     "autoload": {
         "files": [
