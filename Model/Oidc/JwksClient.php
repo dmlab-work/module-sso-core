@@ -74,9 +74,22 @@ class JwksClient
             return $keySet;
         }
 
+        return $this->refetchKeySet($jwksUri) ?? $keySet;
+    }
+
+    /**
+     * Force a JWKS refetch, at most once per `refetchCooldown`; null while cooling down.
+     *
+     * Used when a kid-less token fails verification against the cached set (OIDC Core §10.1.1).
+     *
+     * @param string $jwksUri
+     * @throws IdTokenValidationException
+     */
+    public function refetchKeySet(string $jwksUri): ?JWKSet
+    {
         $markerId = self::REFETCH_PREFIX . hash('sha256', $jwksUri);
         if ($this->cache->load($markerId) !== false) {
-            return $keySet;
+            return null;
         }
         // Marker is set before the fetch so a failing IdP is not hammered either.
         $this->cache->save('1', $markerId, [], $this->refetchCooldown);

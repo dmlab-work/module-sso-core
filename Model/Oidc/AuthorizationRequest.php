@@ -22,12 +22,14 @@ class AuthorizationRequest implements AuthorizationStateInterface
      * @param string $state
      * @param string $nonce
      * @param string $codeVerifier
+     * @param string $issuer
      */
     public function __construct(
         private readonly string $url,
         private readonly string $state,
         private readonly string $nonce,
-        private readonly string $codeVerifier
+        private readonly string $codeVerifier,
+        private readonly string $issuer = ''
     ) {
     }
 
@@ -61,5 +63,13 @@ class AuthorizationRequest implements AuthorizationStateInterface
     public function getCodeVerifier(): string
     {
         return $this->codeVerifier;
+    }
+
+    /**
+     * Get the issuer the request is sent to.
+     */
+    public function getIssuer(): string
+    {
+        return $this->issuer;
     }
 }

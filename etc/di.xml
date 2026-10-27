@@ -12,6 +12,11 @@
             <argument name="cache" xsi:type="object">DmLab\SsoCore\Model\Cache\Type</argument>
         </arguments>
     </type>
+    <type name="DmLab\SsoCore\Model\Oidc\IdTokenValidator">
+        <arguments>
+            <argument name="jwksClient" xsi:type="object">DmLab\SsoCore\Model\Oidc\JwksClient</argument>
+        </arguments>
+    </type>
     <type name="DmLab\SsoCore\Model\Oidc\JwksClient">
         <arguments>
             <argument name="cache" xsi:type="object">DmLab\SsoCore\Model\Cache\Type</argument>

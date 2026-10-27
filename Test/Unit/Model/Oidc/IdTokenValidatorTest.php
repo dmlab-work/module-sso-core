@@ -9,15 +9,24 @@ namespace DmLab\SsoCore\Test\Unit\Model\Oidc;
 
 use DmLab\SsoCore\Exception\IdTokenValidationException;
 use DmLab\SsoCore\Model\Oidc\IdTokenValidator;
+use DmLab\SsoCore\Model\Oidc\JwksClient;
+use DmLab\SsoCore\Model\Oidc\ProviderMetadata;
 use Jose\Component\Core\AlgorithmManager;
 use Jose\Component\Core\JWK;
 use Jose\Component\Core\JWKSet;
 use Jose\Component\KeyManagement\JWKFactory;
+use Jose\Component\Signature\Algorithm\EdDSA;
+use Jose\Component\Signature\Algorithm\ES384;
+use Jose\Component\Signature\Algorithm\ES512;
 use Jose\Component\Signature\Algorithm\HS256;
+use Jose\Component\Signature\Algorithm\PS384;
+use Jose\Component\Signature\Algorithm\PS512;
 use Jose\Component\Signature\Algorithm\RS256;
 use Jose\Component\Signature\JWSBuilder;
 use Jose\Component\Signature\Serializer\CompactSerializer;
 use Magento\Framework\Serialize\Serializer\Json;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 
 class IdTokenValidatorTest extends TestCase
@@ -26,6 +35,7 @@ class IdTokenValidatorTest extends TestCase
     private const AUDIENCE = 'client-abc';
     private const NONCE = 'nonce-xyz';
     private const NOW = 1_700_000_000;
+    private const JWKS_URI = 'https://dev.okta.com/oauth2/v1/keys';
 
     /**
      * @var JWK
@@ -100,13 +110,40 @@ class IdTokenValidatorTest extends TestCase
         self::assertSame(self::NONCE, $claims['nonce']);
     }
 
-    public function testAcceptsAudienceArrayContainingExpected(): void
+    public function testAcceptsAudienceArrayWithTrustedExtraAudience(): void
     {
-        $claims = $this->validate($this->mint(
+        $token = $this->mint(
             $this->claims(['aud' => ['someone-else', self::AUDIENCE], 'azp' => self::AUDIENCE])
-        ));
+        );
+
+        $claims = $this->validator()->validate(
+            $token,
+            $this->keySet,
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW,
+            ['someone-else']
+        );
 
         self::assertSame(self::AUDIENCE, $claims['aud'][1]);
+    }
+
+    public function testAcceptsAudienceArrayWithOnlyTheClient(): void
+    {
+        $claims = $this->validate($this->mint($this->claims(['aud' => [self::AUDIENCE]])));
+
+        self::assertSame([self::AUDIENCE], $claims['aud']);
+    }
+
+    public function testRejectsUntrustedExtraAudience(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('untrusted audience');
+
+        $this->validate($this->mint(
+            $this->claims(['aud' => ['someone-else', self::AUDIENCE], 'azp' => self::AUDIENCE])
+        ));
     }
 
     public function testRejectsMultiAudienceWithoutMatchingAzp(): void
@@ -115,7 +152,15 @@ class IdTokenValidatorTest extends TestCase
         $this->expectExceptionMessage('azp');
 
         // Multiple audiences but no azp — OIDC Core §3.1.3.7 requires azp === client id.
-        $this->validate($this->mint($this->claims(['aud' => ['someone-else', self::AUDIENCE]])));
+        $this->validator()->validate(
+            $this->mint($this->claims(['aud' => ['someone-else', self::AUDIENCE]])),
+            $this->keySet,
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW,
+            ['someone-else']
+        );
     }
 
     public function testRejectsTamperedSignature(): void
@@ -321,5 +366,320 @@ class IdTokenValidatorTest extends TestCase
         $this->expectExceptionMessage('compact JWS');
 
         $this->validate('not-a-jwt');
+    }
+
+    public function testRejectsCriticalHeader(): void
+    {
+        $token = $this->mintWith($this->privateKey, new RS256(), $this->claims(), ['crit' => ['exp'], 'exp' => 1]);
+
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('crit');
+
+        $this->validate($token);
+    }
+
+    public function testAcceptsFractionalNumericDates(): void
+    {
+        $claims = $this->validate($this->mint($this->claims([
+            'iat' => self::NOW + 0.5,
+            'exp' => self::NOW + 300.25,
+            'nbf' => self::NOW - 0.75,
+        ])));
+
+        self::assertSame('user-123', $claims['sub']);
+    }
+
+    public function testAcceptsFractionalNumericStringExp(): void
+    {
+        $claims = $this->validate($this->mint($this->claims(['exp' => (self::NOW + 300) . '.5'])));
+
+        self::assertSame('user-123', $claims['sub']);
+    }
+
+    public function testFractionalExpBeyondLeewayIsRejected(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('expired');
+
+        $this->validate($this->mint($this->claims(['exp' => self::NOW - 60.5])));
+    }
+
+    public function testRejectsIatOlderThanDefaultMaxAge(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('"iat" is too far in the past');
+
+        // Default max age 600s + 60s leeway.
+        $this->validate($this->mint($this->claims(['iat' => self::NOW - 661, 'exp' => self::NOW + 300])));
+    }
+
+    public function testAcceptsIatWithinDefaultMaxAge(): void
+    {
+        $claims = $this->validate($this->mint($this->claims(['iat' => self::NOW - 660])));
+
+        self::assertSame(self::NOW - 660, $claims['iat']);
+    }
+
+    public function testMaxIatAgeIsConfigurableAndZeroDisablesIt(): void
+    {
+        $token = $this->mint($this->claims(['iat' => self::NOW - 86400]));
+
+        $claims = (new IdTokenValidator(new Json(), null, 0))
+            ->validate($token, $this->keySet, self::ISSUER, self::AUDIENCE, self::NONCE, self::NOW);
+        self::assertSame(self::NOW - 86400, $claims['iat']);
+
+        $this->expectException(IdTokenValidationException::class);
+        (new IdTokenValidator(new Json(), null, 30))->validate(
+            $this->mint($this->claims(['iat' => self::NOW - 91])),
+            $this->keySet,
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW
+        );
+    }
+
+    public function testDiscoveredAlgorithmsIntersectAllowList(): void
+    {
+        $claims = $this->validator()->validate(
+            $this->mint($this->claims()),
+            $this->keySet,
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW,
+            [],
+            ['RS256', 'HS256', 'none']
+        );
+
+        self::assertSame('user-123', $claims['sub']);
+    }
+
+    public function testRejectsAlgorithmTheIdpDoesNotAdvertise(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+
+        $this->validator()->validate(
+            $this->mint($this->claims()),
+            $this->keySet,
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW,
+            [],
+            ['ES256']
+        );
+    }
+
+    public function testRejectsWhenNoAdvertisedAlgorithmIsAccepted(): void
+    {
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('HS256');
+
+        $this->validator()->validate(
+            $this->mint($this->claims()),
+            $this->keySet,
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW,
+            [],
+            ['HS256']
+        );
+    }
+
+    /**
+     * @return array<string, array{0: callable(): JWK, 1: class-string}>
+     */
+    public static function additionalAlgorithmProvider(): array
+    {
+        return [
+            'ES384' => [static fn() => JWKFactory::createECKey('P-384', ['alg' => 'ES384']), ES384::class],
+            'ES512' => [static fn() => JWKFactory::createECKey('P-521', ['alg' => 'ES512']), ES512::class],
+            'PS384' => [static fn() => JWKFactory::createRSAKey(2048, ['alg' => 'PS384', 'kid' => 'p1']), PS384::class],
+            'PS512' => [static fn() => JWKFactory::createRSAKey(2048, ['alg' => 'PS512', 'kid' => 'p2']), PS512::class],
+        ];
+    }
+
+    /**
+     * @param callable(): JWK $keyFactory
+     * @param class-string $algorithmClass
+     */
+    #[DataProvider('additionalAlgorithmProvider')]
+    public function testAcceptsAdditionalAsymmetricAlgorithms(callable $keyFactory, string $algorithmClass): void
+    {
+        $key = $keyFactory();
+        $token = $this->mintWith($key, new $algorithmClass(), $this->claims());
+
+        $claims = $this->validator()->validate(
+            $token,
+            new JWKSet([$key->toPublic()]),
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW
+        );
+
+        self::assertSame('user-123', $claims['sub']);
+    }
+
+    #[RequiresPhpExtension('sodium')]
+    public function testAcceptsEdDsa(): void
+    {
+        $key = JWKFactory::createOKPKey('Ed25519', ['alg' => 'EdDSA', 'kid' => 'ed1']);
+        $token = $this->mintWith($key, new EdDSA(), $this->claims());
+
+        $claims = $this->validator()->validate(
+            $token,
+            new JWKSet([$key->toPublic()]),
+            self::ISSUER,
+            self::AUDIENCE,
+            self::NONCE,
+            self::NOW
+        );
+
+        self::assertSame('user-123', $claims['sub']);
+    }
+
+    public function testValidateForProviderUsesDiscoveredIssuerJwksAndAlgorithms(): void
+    {
+        $jwks = $this->createMock(JwksClient::class);
+        $jwks->expects(self::once())->method('getKeySetForToken')
+            ->with(self::JWKS_URI)->willReturn($this->keySet);
+        $jwks->expects(self::never())->method('refetchKeySet');
+
+        $claims = (new IdTokenValidator(new Json(), $jwks))->validateForProvider(
+            $this->mint($this->claims()),
+            $this->metadata(['RS256']),
+            self::AUDIENCE,
+            self::NONCE,
+            [],
+            self::NOW
+        );
+
+        self::assertSame('user-123', $claims['sub']);
+    }
+
+    public function testValidateForProviderRejectsAlgorithmOutsideDiscoveredList(): void
+    {
+        $jwks = $this->createStub(JwksClient::class);
+        $jwks->method('getKeySetForToken')->willReturn($this->keySet);
+
+        $this->expectException(IdTokenValidationException::class);
+
+        (new IdTokenValidator(new Json(), $jwks))->validateForProvider(
+            $this->mint($this->claims()),
+            $this->metadata(['ES256']),
+            self::AUDIENCE,
+            self::NONCE,
+            [],
+            self::NOW
+        );
+    }
+
+    public function testKidLessTokenRefetchesJwksOnceOnSignatureFailure(): void
+    {
+        $rotated = JWKFactory::createRSAKey(2048, ['alg' => 'RS256', 'use' => 'sig']);
+        $jwks = $this->createMock(JwksClient::class);
+        $jwks->method('getKeySetForToken')->willReturn($this->keySet);
+        $jwks->expects(self::once())->method('refetchKeySet')
+            ->with(self::JWKS_URI)->willReturn(new JWKSet([$rotated->toPublic()]));
+
+        $claims = (new IdTokenValidator(new Json(), $jwks))->validateForProvider(
+            $this->mintWith($rotated, new RS256(), $this->claims()),
+            $this->metadata(),
+            self::AUDIENCE,
+            self::NONCE,
+            [],
+            self::NOW
+        );
+
+        self::assertSame('user-123', $claims['sub']);
+    }
+
+    public function testKidLessTokenFailsWhenRefetchIsCoolingDown(): void
+    {
+        $rotated = JWKFactory::createRSAKey(2048, ['alg' => 'RS256', 'use' => 'sig']);
+        $jwks = $this->createStub(JwksClient::class);
+        $jwks->method('getKeySetForToken')->willReturn($this->keySet);
+        $jwks->method('refetchKeySet')->willReturn(null);
+
+        $this->expectException(IdTokenValidationException::class);
+        $this->expectExceptionMessage('signature');
+
+        (new IdTokenValidator(new Json(), $jwks))->validateForProvider(
+            $this->mintWith($rotated, new RS256(), $this->claims()),
+            $this->metadata(),
+            self::AUDIENCE,
+            self::NONCE,
+            [],
+            self::NOW
+        );
+    }
+
+    public function testTokenWithKidIsNotRefetchedOnSignatureFailure(): void
+    {
+        $foreignKey = JWKFactory::createRSAKey(2048, ['alg' => 'RS256', 'use' => 'sig', 'kid' => 'k1']);
+        $jwks = $this->createMock(JwksClient::class);
+        $jwks->method('getKeySetForToken')->willReturn($this->keySet);
+        $jwks->expects(self::never())->method('refetchKeySet');
+
+        $this->expectException(IdTokenValidationException::class);
+
+        (new IdTokenValidator(new Json(), $jwks))->validateForProvider(
+            $this->mint($this->claims(), $foreignKey),
+            $this->metadata(),
+            self::AUDIENCE,
+            self::NONCE,
+            [],
+            self::NOW
+        );
+    }
+
+    public function testValidateForProviderRequiresJwksClient(): void
+    {
+        $this->expectException(\LogicException::class);
+
+        $this->validator()->validateForProvider(
+            $this->mint($this->claims()),
+            $this->metadata(),
+            self::AUDIENCE,
+            self::NONCE
+        );
+    }
+
+    /**
+     * @param string[] $algorithms
+     */
+    private function metadata(array $algorithms = []): ProviderMetadata
+    {
+        return new ProviderMetadata(
+            self::ISSUER,
+            self::ISSUER . '/authorize',
+            self::ISSUER . '/token',
+            self::JWKS_URI,
+            [],
+            $algorithms
+        );
+    }
+
+    /**
+     * Sign claims with any algorithm; the header carries `alg`, the key's `kid` when set, and extras.
+     *
+     * @param array<string, mixed> $claims
+     * @param array<string, mixed> $extraHeader
+     */
+    private function mintWith(JWK $key, object $algorithm, array $claims, array $extraHeader = []): string
+    {
+        $header = ['alg' => $algorithm->name()] + $extraHeader;
+        if ($key->has('kid')) {
+            $header['kid'] = $key->get('kid');
+        }
+        $jws = (new JWSBuilder(new AlgorithmManager([$algorithm])))->create()
+            ->withPayload((string)json_encode($claims), false)
+            ->addSignature($key, $header, [])
+            ->build();
+
+        return (new CompactSerializer())->serialize($jws, 0);
     }
 }

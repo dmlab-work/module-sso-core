@@ -306,6 +306,32 @@ class JwksClientTest extends TestCase
         self::assertArrayNotHasKey('dmlab_ssocore_oidc_jwks_' . $hash, $saves);
     }
 
+    public function testRefetchKeySetFetchesAndSetsCooldownMarker(): void
+    {
+        $saves = [];
+        $http = $this->recordingHttp($log, $this->rotatedJwksJson);
+
+        $keySet = (new JwksClient($this->factory($http), $this->memoryCache($this->jwksJson, false, $saves)))
+            ->refetchKeySet(self::URI);
+
+        self::assertNotNull($keySet);
+        self::assertTrue($keySet->has('k2'));
+        $hash = hash('sha256', self::URI);
+        self::assertSame(['1', 60], $saves['dmlab_ssocore_oidc_jwks_refetch_' . $hash] ?? null);
+        self::assertSame([$this->rotatedJwksJson, 3600], $saves['dmlab_ssocore_oidc_jwks_' . $hash] ?? null);
+    }
+
+    public function testRefetchKeySetReturnsNullDuringCooldown(): void
+    {
+        $saves = [];
+        $factory = $this->createMock(ClientFactory::class);
+        $factory->expects(self::never())->method('create');
+
+        self::assertNull(
+            (new JwksClient($factory, $this->memoryCache($this->jwksJson, true, $saves)))->refetchKeySet(self::URI)
+        );
+    }
+
     /**
      * In-memory cache: optional warm JWKS document, optional refetch marker; records saves as [data, lifetime].
      *

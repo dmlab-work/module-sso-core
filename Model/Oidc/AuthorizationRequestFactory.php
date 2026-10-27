@@ -24,7 +24,8 @@ class AuthorizationRequestFactory
     private const RANDOM_BYTES = 32;
 
     /**
-     * Params owned by the factory; presets must not override them.
+     * Params owned by the factory; presets must not override them. `max_age` is reserved
+     * because `auth_time` is not enforced; `request`/`request_uri` could override every param.
      */
     private const RESERVED_PARAMS = [
         'response_type',
@@ -35,6 +36,9 @@ class AuthorizationRequestFactory
         'nonce',
         'code_challenge',
         'code_challenge_method',
+        'max_age',
+        'request',
+        'request_uri',
     ];
 
     /**
@@ -45,6 +49,7 @@ class AuthorizationRequestFactory
      * @param string $redirectUri
      * @param string[] $scopes
      * @param array<string,string> $extraParams preset params, e.g. from AuthorizationParamsProviderInterface
+     * @param string $issuer discovered issuer, kept in the state for the callback's mix-up check
      * @throws \InvalidArgumentException on a reserved key or non-string value in $extraParams
      */
     public function create(
@@ -52,7 +57,8 @@ class AuthorizationRequestFactory
         string $clientId,
         string $redirectUri,
         array $scopes,
-        array $extraParams = []
+        array $extraParams = [],
+        string $issuer = ''
     ): AuthorizationRequest {
         $this->assertExtraParams($extraParams);
 
@@ -75,7 +81,7 @@ class AuthorizationRequestFactory
         $url = $authorizationEndpoint . $separator
             . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
-        return new AuthorizationRequest($url, $state, $nonce, $codeVerifier);
+        return new AuthorizationRequest($url, $state, $nonce, $codeVerifier, $issuer);
     }
 
     /**

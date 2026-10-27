@@ -25,25 +25,32 @@ Scope v1 is **OIDC** (authorization-code + PKCE); SAML is a later phase.
 
 1. **Discovery** — `DiscoveryClient::discover($url, $requireIssuerMatch = true)` fetches
    (and caches) `.well-known/openid-configuration` → `ProviderMetadata` (issuer,
-   authorization, token, JWKS endpoints). Per OIDC Discovery §4.3 the `issuer` (minus a
-   trailing `/`) must equal the URL prefix before `/.well-known/openid-configuration`; pass `false`
-   when the preset's `DiscoveryIssuerPolicyInterface` opts out (e.g. Entra domain tenant).
+   authorization, token, JWKS endpoints, advertised auth methods / signing algs / RFC 9207
+   support). The `issuer` must be https without query/fragment. Per OIDC Discovery §4.3 it
+   (minus a trailing `/`) must equal the URL prefix before `/.well-known/openid-configuration`
+   — other URLs are rejected; pass `false` when the preset's `DiscoveryIssuerPolicyInterface`
+   opts out (e.g. Entra domain tenant).
 2. **Authorization request** — `AuthorizationRequestFactory::create()` builds the
    redirect URL with `state`, `nonce`, a PKCE `S256` challenge, and optional preset
-   `$extraParams` (reserved OIDC keys rejected). It returns an
-   `AuthorizationRequest` (implements `AuthorizationStateInterface`); the consumer
-   persists that state via `AuthorizationStateStorageInterface` before redirecting.
+   `$extraParams` (reserved keys rejected, incl. `max_age`/`request`/`request_uri`) and keeps
+   the discovered `$issuer` in the state. It returns an `AuthorizationRequest` (implements
+   `AuthorizationStateInterface`); the consumer persists that state — issuer included — via
+   `AuthorizationStateStorageInterface` before redirecting.
 3. **Callback** — the consumer reloads the state with `consume($state)` (one-time;
-   replay-protected).
+   replay-protected), then `AuthorizationResponseValidator::validateIssuer($issParam, $state,
+   $metadata)` rejects a response from another IdP (RFC 9207 `iss`, RFC 9700 §4.4 mix-up).
 4. **Token exchange** — `TokenClient::exchangeCode()` redeems the code with the PKCE
    verifier at the token endpoint → `TokenResponse` (carries the `id_token`). A client secret
    is sent as `client_secret_basic` unless the discovered `token_endpoint_auth_methods_supported`
    lists only `client_secret_post`; pass `$metadata->getTokenEndpointAuthMethodsSupported()`.
-5. **ID-token validation** — `JwksClient::getKeySetForToken($jwksUri, $idToken)` resolves
-   the JWKS and refetches once when the token's `kid` is unknown (IdP key rotation; at most
-   one refetch per 60s cooldown). `IdTokenValidator::validate()` verifies the JWS signature
-   (asymmetric algorithms only — no `none`/`HS*`) and `iss`/`aud`/`azp`/`exp`/`iat`/`nbf`/
-   `nonce` (60s leeway on time claims) → validated claims.
+5. **ID-token validation** — `IdTokenValidator::validateForProvider($idToken, $metadata,
+   $clientId, $nonce, $trustedAudiences = [])` resolves the JWKS (one refetch on an unknown
+   `kid`, or on a signature failure of a kid-less token; at most one per 60s cooldown) and
+   verifies the JWS signature: RS/PS/ES 256–512 and EdDSA, intersected with the discovered
+   `id_token_signing_alg_values_supported` (never `none`/`HS*`); any `crit` header is rejected.
+   It then checks `iss`/`aud` (extra audiences only if in `$trustedAudiences`)/`azp`/`exp`/
+   `iat`/`nbf`/`nonce` — fractional NumericDates allowed, 60s leeway, `iat` at most 600s old —
+   → validated claims. The lower-level `validate()` takes an explicit `JWKSet`.
 6. **Normalization** — `IdentityFactory::create($claims, $preset)` maps `sub`, `iss`,
    `email`, `name`, `email_verified`, and the preset's groups claim into an
    `IdentityInterface`. `sub` is unique only per issuer — bind accounts on
@@ -59,7 +66,7 @@ started the flow.
 
 Outbound HTTP (discovery, JWKS, token) uses a fresh HTTPS-only client per request with a
 5s connect / 10s total timeout — override `connectTimeout`, `timeout`, `refetchCooldown`
-(JWKS) via `etc/di.xml` arguments.
+(JWKS) via `etc/di.xml` arguments; `IdTokenValidator`'s `maxIatAge` likewise (`0` disables).
 
 ## The ProviderPreset contract
 
@@ -102,13 +109,15 @@ $authRequest = $authorizationRequestFactory->create(
     $redirectUri,
     $preset->getDefaultScopes(),
     $preset instanceof AuthorizationParamsProviderInterface
-        ? $preset->getAuthorizationParams($config) : []
+        ? $preset->getAuthorizationParams($config) : [],
+    $metadata->getIssuer()
 );
 $stateStorage->save($authRequest);           // persist before redirect
 // redirect user to $authRequest->getUrl()
 
 // --- on callback ---
 $state  = $stateStorage->consume($stateParam);
+$authorizationResponseValidator->validateIssuer($request->getParam('iss'), $state, $metadata);
 $tokens = $tokenClient->exchangeCode(
     $metadata->getTokenEndpoint(),
     $code,
@@ -118,10 +127,9 @@ $tokens = $tokenClient->exchangeCode(
     $clientSecret,
     $metadata->getTokenEndpointAuthMethodsSupported()
 );
-$claims = $idTokenValidator->validate(
+$claims = $idTokenValidator->validateForProvider(
     $tokens->getIdToken(),
-    $jwksClient->getKeySetForToken($metadata->getJwksUri(), $tokens->getIdToken()),
-    $metadata->getIssuer(),
+    $metadata,
     $clientId,
     $state->getNonce()
 );
@@ -146,7 +154,7 @@ Stable contracts products depend on. Full method docs live in the interface file
 | `Api/AuthorizationParamsProviderInterface` | Optional preset: `getAuthorizationParams($config)` — extra auth params (`hd`, `domain_hint`). |
 | `Api/Data/IdentityInterface` | Provider-agnostic normalized identity (`getSubjectId`, `getIssuer`, `getEmail`, `getName`, `getGroups`, `isEmailVerified`, `hasDistributedClaim`, `hasDistributedGroups`). |
 | `Api/AuthorizationStateStorageInterface` | Product-owned persistence of the one-time auth state (`save`, `consume`). |
-| `Api/Data/AuthorizationStateInterface` | The one-time state itself (`getState`, `getNonce`, `getCodeVerifier`). |
+| `Api/Data/AuthorizationStateInterface` | The one-time state itself (`getState`, `getNonce`, `getCodeVerifier`, `getIssuer`). |
 
 ## Requirements
 

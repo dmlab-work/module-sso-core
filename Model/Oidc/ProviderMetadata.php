@@ -20,13 +20,17 @@ class ProviderMetadata
      * @param string $tokenEndpoint
      * @param string $jwksUri
      * @param string[] $tokenEndpointAuthMethodsSupported
+     * @param string[] $idTokenSigningAlgValuesSupported
+     * @param bool $authorizationResponseIssParameterSupported
      */
     public function __construct(
         private readonly string $issuer,
         private readonly string $authorizationEndpoint,
         private readonly string $tokenEndpoint,
         private readonly string $jwksUri,
-        private readonly array $tokenEndpointAuthMethodsSupported = []
+        private readonly array $tokenEndpointAuthMethodsSupported = [],
+        private readonly array $idTokenSigningAlgValuesSupported = [],
+        private readonly bool $authorizationResponseIssParameterSupported = false
     ) {
     }
 
@@ -70,5 +74,23 @@ class ProviderMetadata
     public function getTokenEndpointAuthMethodsSupported(): array
     {
         return $this->tokenEndpointAuthMethodsSupported;
+    }
+
+    /**
+     * Get `id_token_signing_alg_values_supported`; empty when not advertised.
+     *
+     * @return string[]
+     */
+    public function getIdTokenSigningAlgValuesSupported(): array
+    {
+        return $this->idTokenSigningAlgValuesSupported;
+    }
+
+    /**
+     * Whether the IdP sends `iss` in authorization responses (RFC 9207).
+     */
+    public function isAuthorizationResponseIssParameterSupported(): bool
+    {
+        return $this->authorizationResponseIssParameterSupported;
     }
 }

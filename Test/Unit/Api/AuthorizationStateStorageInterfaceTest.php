@@ -38,7 +38,7 @@ class AuthorizationStateStorageInterfaceTest extends TestCase
     public function testRoundTripsSavedState(): void
     {
         $storage = $this->inMemoryStorage();
-        $request = new AuthorizationRequest('https://idp/authorize', 'st', 'no', 'ver');
+        $request = new AuthorizationRequest('https://idp/authorize', 'st', 'no', 'ver', 'https://idp');
 
         $storage->save($request);
         $loaded = $storage->consume('st');
@@ -47,6 +47,7 @@ class AuthorizationStateStorageInterfaceTest extends TestCase
         self::assertSame('st', $loaded->getState());
         self::assertSame('no', $loaded->getNonce());
         self::assertSame('ver', $loaded->getCodeVerifier());
+        self::assertSame('https://idp', $loaded->getIssuer());
     }
 
     public function testConsumeIsSingleUse(): void

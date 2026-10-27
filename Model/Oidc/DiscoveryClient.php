@@ -66,8 +66,8 @@ class DiscoveryClient
     /**
      * Resolve provider metadata for the given discovery URL, using the cache when warm.
      *
-     * With `$requireIssuerMatch`, a standard `.well-known` URL must be prefixed by the
-     * document's `issuer`, minus a trailing `/` (OIDC Discovery §4.1, §4.3).
+     * With `$requireIssuerMatch`, the URL must end in `/.well-known/openid-configuration` and be
+     * prefixed by the document's `issuer`, minus a trailing `/` (OIDC Discovery §4.1, §4.3).
      *
      * @param string $discoveryUrl
      * @param bool $requireIssuerMatch
@@ -170,13 +170,16 @@ class DiscoveryClient
         foreach (self::HTTPS_ENDPOINT_KEYS as $key) {
             $this->assertHttps($data[$key], $key);
         }
+        $this->assertIssuerIdentifier($data['issuer']);
 
         return new ProviderMetadata(
             $data['issuer'],
             $data['authorization_endpoint'],
             $data['token_endpoint'],
             $data['jwks_uri'],
-            $this->stringList($data, 'token_endpoint_auth_methods_supported')
+            $this->stringList($data, 'token_endpoint_auth_methods_supported'),
+            $this->stringList($data, 'id_token_signing_alg_values_supported'),
+            ($data['authorization_response_iss_parameter_supported'] ?? false) === true
         );
     }
 
@@ -198,16 +201,36 @@ class DiscoveryClient
     }
 
     /**
-     * Assert the issuer equals the discovery URL prefix; non-standard URLs are skipped.
+     * Assert the issuer is an https URL without query or fragment (OIDC Discovery §3).
+     *
+     * @param string $issuer
+     * @throws DiscoveryException
+     */
+    private function assertIssuerIdentifier(string $issuer): void
+    {
+        $this->assertHttps($issuer, 'issuer');
+        if (str_contains($issuer, '?') || str_contains($issuer, '#')) {
+            throw new DiscoveryException(
+                sprintf('OIDC issuer must not contain a query or fragment: "%s".', $issuer)
+            );
+        }
+    }
+
+    /**
+     * Assert the issuer equals the discovery URL prefix (OIDC Discovery §4.3).
      *
      * @param string $discoveryUrl
      * @param string $issuer
-     * @throws DiscoveryException
+     * @throws DiscoveryException when the URL is non-standard or the issuer differs
      */
     private function assertIssuerMatches(string $discoveryUrl, string $issuer): void
     {
         if (!str_ends_with($discoveryUrl, self::WELL_KNOWN_SUFFIX)) {
-            return;
+            throw new DiscoveryException(sprintf(
+                'OIDC discovery URL "%s" does not end with "%s", so its issuer cannot be verified.',
+                $discoveryUrl,
+                self::WELL_KNOWN_SUFFIX
+            ));
         }
 
         $expected = substr($discoveryUrl, 0, -strlen(self::WELL_KNOWN_SUFFIX));

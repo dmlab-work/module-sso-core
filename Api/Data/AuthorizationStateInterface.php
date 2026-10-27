@@ -9,8 +9,9 @@ namespace DmLab\SsoCore\Api\Data;
 
 /**
  * One-time authorization state the consumer must persist between the redirect to
- * the IdP and the callback: `state` (CSRF), `nonce` (replay), and the PKCE
- * `code_verifier` needed to redeem the authorization code at the token endpoint.
+ * the IdP and the callback: `state` (CSRF), `nonce` (replay), the PKCE
+ * `code_verifier` needed to redeem the authorization code at the token endpoint,
+ * and the issuer the request was sent to (mix-up defense, RFC 9700 §4.4).
  */
 interface AuthorizationStateInterface
 {
@@ -28,4 +29,9 @@ interface AuthorizationStateInterface
      * PKCE `code_verifier` proving the client that started the flow completes it.
      */
     public function getCodeVerifier(): string;
+
+    /**
+     * Issuer identifier of the IdP the request was sent to; empty when unknown.
+     */
+    public function getIssuer(): string;
 }

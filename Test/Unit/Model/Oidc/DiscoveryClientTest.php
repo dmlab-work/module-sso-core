@@ -273,14 +273,70 @@ class DiscoveryClientTest extends TestCase
         self::assertSame('https://other.example.com', $metadata->getIssuer());
     }
 
-    public function testNonStandardUrlSkipsIssuerCheck(): void
+    public function testNonStandardUrlThrowsWhenIssuerMatchRequired(): void
+    {
+        $http = $this->httpReturning($this->document(['issuer' => 'https://idp.example.com']));
+
+        $this->expectException(DiscoveryException::class);
+        $this->expectExceptionMessage('cannot be verified');
+
+        $this->client($http, $this->coldCache())->discover('https://idp.example.com/oidc/metadata.json');
+    }
+
+    public function testNonStandardUrlAllowedWhenMatchNotRequired(): void
     {
         $http = $this->httpReturning($this->document(['issuer' => 'https://idp.example.com']));
 
         $metadata = $this->client($http, $this->coldCache())
-            ->discover('https://idp.example.com/oidc/metadata.json');
+            ->discover('https://idp.example.com/oidc/metadata.json', false);
 
         self::assertSame('https://idp.example.com', $metadata->getIssuer());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidIssuerProvider(): array
+    {
+        return [
+            'http' => ['http://dev.okta.com'],
+            'query' => ['https://dev.okta.com?tenant=1'],
+            'fragment' => ['https://dev.okta.com#x'],
+        ];
+    }
+
+    #[DataProvider('invalidIssuerProvider')]
+    public function testRejectsInvalidIssuerIdentifierEvenWithoutMatch(string $issuer): void
+    {
+        $http = $this->httpReturning($this->document(['issuer' => $issuer]));
+
+        $this->expectException(DiscoveryException::class);
+        $this->expectExceptionMessage('issuer');
+
+        $this->client($http, $this->coldCache())->discover(self::URL, false);
+    }
+
+    public function testParsesSigningAlgorithmsAndIssParameterSupport(): void
+    {
+        $http = $this->httpReturning($this->document([
+            'id_token_signing_alg_values_supported' => ['RS256', 'ES256'],
+            'authorization_response_iss_parameter_supported' => true,
+        ]));
+
+        $metadata = $this->client($http, $this->coldCache())->discover(self::URL);
+
+        self::assertSame(['RS256', 'ES256'], $metadata->getIdTokenSigningAlgValuesSupported());
+        self::assertTrue($metadata->isAuthorizationResponseIssParameterSupported());
+    }
+
+    public function testIssParameterSupportRequiresStrictTrue(): void
+    {
+        $http = $this->httpReturning($this->document(['authorization_response_iss_parameter_supported' => 'true']));
+
+        $metadata = $this->client($http, $this->coldCache())->discover(self::URL);
+
+        self::assertFalse($metadata->isAuthorizationResponseIssParameterSupported());
+        self::assertSame([], $metadata->getIdTokenSigningAlgValuesSupported());
     }
 
     private function httpReturning(string $body): ClientInterface

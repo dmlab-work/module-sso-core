@@ -30,6 +30,26 @@ class AuthorizationRequestFactoryTest extends TestCase
         );
     }
 
+    public function testIssuerIsKeptInState(): void
+    {
+        $request = (new AuthorizationRequestFactory())->create(
+            self::ENDPOINT,
+            self::CLIENT_ID,
+            self::REDIRECT,
+            ['openid'],
+            [],
+            'https://dev.okta.com'
+        );
+
+        self::assertSame('https://dev.okta.com', $request->getIssuer());
+        self::assertArrayNotHasKey('iss', $this->queryParams($request->getUrl()));
+    }
+
+    public function testIssuerDefaultsToEmpty(): void
+    {
+        self::assertSame('', $this->build()->getIssuer());
+    }
+
     /**
      * @return array<string, string>
      */
@@ -203,6 +223,9 @@ class AuthorizationRequestFactoryTest extends TestCase
             'nonce' => ['nonce'],
             'code_challenge' => ['code_challenge'],
             'code_challenge_method' => ['code_challenge_method'],
+            'max_age' => ['max_age'],
+            'request' => ['request'],
+            'request_uri' => ['request_uri'],
         ];
     }
 
