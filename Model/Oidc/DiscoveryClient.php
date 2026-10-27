@@ -175,8 +175,26 @@ class DiscoveryClient
             $data['issuer'],
             $data['authorization_endpoint'],
             $data['token_endpoint'],
-            $data['jwks_uri']
+            $data['jwks_uri'],
+            $this->stringList($data, 'token_endpoint_auth_methods_supported')
         );
+    }
+
+    /**
+     * Read an optional JSON array of strings; non-string members and non-arrays are dropped.
+     *
+     * @param array<string,mixed> $data
+     * @param string $key
+     * @return string[]
+     */
+    private function stringList(array $data, string $key): array
+    {
+        $value = $data[$key] ?? null;
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, static fn($item) => is_string($item) && $item !== ''));
     }
 
     /**

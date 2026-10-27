@@ -13,6 +13,7 @@ use DmLab\SsoCore\Model\Oidc\TokenResponse;
 use Magento\Framework\HTTP\ClientFactory;
 use Magento\Framework\HTTP\ClientInterface;
 use Magento\Framework\Serialize\Serializer\Json;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class TokenClientTest extends TestCase
@@ -42,7 +43,10 @@ class TokenClientTest extends TestCase
         ], $overrides));
     }
 
-    private function exchange(TokenClient $client, ?string $secret = null): TokenResponse
+    /**
+     * @param string[] $authMethods
+     */
+    private function exchange(TokenClient $client, ?string $secret = null, array $authMethods = []): TokenResponse
     {
         return $client->exchangeCode(
             self::ENDPOINT,
@@ -50,7 +54,8 @@ class TokenClientTest extends TestCase
             self::REDIRECT,
             self::CLIENT_ID,
             self::VERIFIER,
-            $secret
+            $secret,
+            $authMethods
         );
     }
 
@@ -80,18 +85,77 @@ class TokenClientTest extends TestCase
         self::assertNull($response->getRefreshToken());
     }
 
-    public function testIncludesClientSecretWhenProvided(): void
+    public function testUsesClientSecretPostWhenOnlyPostIsAdvertised(): void
+    {
+        $http = $this->recordingHttp($log, $this->body());
+
+        $this->exchange($this->client($http), 'shh', ['client_secret_post', 'private_key_jwt']);
+
+        self::assertSame('shh', $log['params']['client_secret']);
+        self::assertSame(self::CLIENT_ID, $log['params']['client_id']);
+        self::assertArrayNotHasKey('Authorization', $log['headers']);
+    }
+
+    /**
+     * @return array<string, array{0: string[]}>
+     */
+    public static function basicAuthMethodsProvider(): array
+    {
+        return [
+            'not advertised (spec default)' => [[]],
+            'basic advertised' => [['client_secret_basic']],
+            'both advertised' => [['client_secret_post', 'client_secret_basic']],
+        ];
+    }
+
+    /**
+     * @param string[] $authMethods
+     */
+    #[DataProvider('basicAuthMethodsProvider')]
+    public function testUsesClientSecretBasic(array $authMethods): void
+    {
+        $http = $this->recordingHttp($log, $this->body());
+
+        $this->exchange($this->client($http), 'shh', $authMethods);
+
+        self::assertSame('Basic ' . base64_encode(self::CLIENT_ID . ':shh'), $log['headers']['Authorization']);
+        self::assertArrayNotHasKey('client_secret', $log['params']);
+        self::assertArrayNotHasKey('client_id', $log['params']);
+        self::assertSame(self::VERIFIER, $log['params']['code_verifier']);
+    }
+
+    public function testBasicCredentialsAreFormEncodedBeforeBase64(): void
+    {
+        $http = $this->recordingHttp($log, $this->body());
+
+        $this->exchange($this->client($http), 'a:b/c+d~e f');
+
+        self::assertSame(
+            'Basic ' . base64_encode(self::CLIENT_ID . ':a%3Ab%2Fc%2Bd~e%20f'),
+            $log['headers']['Authorization']
+        );
+    }
+
+    public function testThrowsWhenNoSecretBasedMethodIsAdvertised(): void
     {
         $http = $this->createMock(ClientInterface::class);
-        $http->expects(self::once())
-            ->method('post')
-            ->with(self::ENDPOINT, self::callback(
-                static fn(array $params): bool => ($params['client_secret'] ?? null) === 'shh'
-            ));
-        $http->method('getStatus')->willReturn(200);
-        $http->method('getBody')->willReturn($this->body());
+        $http->expects(self::never())->method('post');
 
-        $this->exchange($this->client($http), 'shh');
+        $this->expectException(TokenException::class);
+        $this->expectExceptionMessage('private_key_jwt');
+
+        $this->exchange($this->client($http), 'shh', ['private_key_jwt']);
+    }
+
+    public function testPublicClientSendsClientIdOnlyRegardlessOfAdvertisedMethods(): void
+    {
+        $http = $this->recordingHttp($log, $this->body());
+
+        $this->exchange($this->client($http), null, ['private_key_jwt']);
+
+        self::assertSame(self::CLIENT_ID, $log['params']['client_id']);
+        self::assertArrayNotHasKey('client_secret', $log['params']);
+        self::assertArrayNotHasKey('Authorization', $log['headers']);
     }
 
     public function testThrowsWhenIdTokenMissing(): void
@@ -181,7 +245,7 @@ class TokenClientTest extends TestCase
      */
     private function recordingHttp(?array &$log, string $body, int $status = 200): ClientInterface
     {
-        $log = ['timeout' => null, 'options' => [], 'headers' => []];
+        $log = ['timeout' => null, 'options' => [], 'headers' => [], 'params' => []];
         $http = $this->createStub(ClientInterface::class);
         $http->method('setTimeout')->willReturnCallback(function ($value) use (&$log): void {
             $log['timeout'] = $value;
@@ -191,6 +255,9 @@ class TokenClientTest extends TestCase
         });
         $http->method('addHeader')->willReturnCallback(function ($name, $value) use (&$log): void {
             $log['headers'][$name] = $value;
+        });
+        $http->method('post')->willReturnCallback(function ($uri, $params) use (&$log): void {
+            $log['params'] = $params;
         });
         $http->method('getStatus')->willReturn($status);
         $http->method('getBody')->willReturn($body);

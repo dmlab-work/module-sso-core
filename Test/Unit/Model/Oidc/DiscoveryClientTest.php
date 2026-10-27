@@ -61,6 +61,32 @@ class DiscoveryClientTest extends TestCase
         self::assertSame('https://dev.okta.com/oauth2/v1/authorize', $metadata->getAuthorizationEndpoint());
         self::assertSame('https://dev.okta.com/oauth2/v1/token', $metadata->getTokenEndpoint());
         self::assertSame('https://dev.okta.com/oauth2/v1/keys', $metadata->getJwksUri());
+        self::assertSame([], $metadata->getTokenEndpointAuthMethodsSupported());
+    }
+
+    public function testParsesTokenEndpointAuthMethods(): void
+    {
+        $http = $this->httpReturning($this->document([
+            'token_endpoint_auth_methods_supported' => ['client_secret_post', 7, '', 'client_secret_basic'],
+        ]));
+
+        $metadata = $this->client($http, $this->coldCache())->discover(self::URL);
+
+        self::assertSame(
+            ['client_secret_post', 'client_secret_basic'],
+            $metadata->getTokenEndpointAuthMethodsSupported()
+        );
+    }
+
+    public function testIgnoresMalformedTokenEndpointAuthMethods(): void
+    {
+        $http = $this->httpReturning(
+            $this->document(['token_endpoint_auth_methods_supported' => 'client_secret_post'])
+        );
+
+        $metadata = $this->client($http, $this->coldCache())->discover(self::URL);
+
+        self::assertSame([], $metadata->getTokenEndpointAuthMethodsSupported());
     }
 
     public function testUsesCacheOnHitWithoutHttpCall(): void

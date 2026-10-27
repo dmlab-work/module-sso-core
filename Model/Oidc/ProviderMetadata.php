@@ -19,12 +19,14 @@ class ProviderMetadata
      * @param string $authorizationEndpoint
      * @param string $tokenEndpoint
      * @param string $jwksUri
+     * @param string[] $tokenEndpointAuthMethodsSupported
      */
     public function __construct(
         private readonly string $issuer,
         private readonly string $authorizationEndpoint,
         private readonly string $tokenEndpoint,
-        private readonly string $jwksUri
+        private readonly string $jwksUri,
+        private readonly array $tokenEndpointAuthMethodsSupported = []
     ) {
     }
 
@@ -58,5 +60,15 @@ class ProviderMetadata
     public function getJwksUri(): string
     {
         return $this->jwksUri;
+    }
+
+    /**
+     * Get `token_endpoint_auth_methods_supported`; empty when not advertised.
+     *
+     * @return string[]
+     */
+    public function getTokenEndpointAuthMethodsSupported(): array
+    {
+        return $this->tokenEndpointAuthMethodsSupported;
     }
 }

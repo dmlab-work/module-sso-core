@@ -16,9 +16,15 @@ use Magento\Framework\Serialize\SerializerInterface;
  * Exchanges an authorization code for tokens at the IdP's `token_endpoint`
  * (authorization-code + PKCE grant). Returns the parsed token set including the
  * `id_token` the validator consumes.
+ *
+ * A confidential client authenticates with `client_secret_basic` unless the IdP advertises
+ * only `client_secret_post`; a client without a secret sends just `client_id`.
  */
 class TokenClient
 {
+    public const AUTH_METHOD_BASIC = 'client_secret_basic';
+    public const AUTH_METHOD_POST = 'client_secret_post';
+
     private const GRANT_TYPE = 'authorization_code';
 
     /**
@@ -46,6 +52,7 @@ class TokenClient
      * @param string $clientId
      * @param string $codeVerifier
      * @param string|null $clientSecret
+     * @param string[] $authMethodsSupported discovery `token_endpoint_auth_methods_supported`
      * @throws TokenException
      */
     public function exchangeCode(
@@ -54,21 +61,33 @@ class TokenClient
         string $redirectUri,
         string $clientId,
         string $codeVerifier,
-        ?string $clientSecret = null
+        ?string $clientSecret = null,
+        array $authMethodsSupported = []
     ): TokenResponse {
         $params = [
             'grant_type' => self::GRANT_TYPE,
             'code' => $code,
             'redirect_uri' => $redirectUri,
-            'client_id' => $clientId,
             'code_verifier' => $codeVerifier,
         ];
-        if ($clientSecret !== null && $clientSecret !== '') {
-            $params['client_secret'] = $clientSecret;
-        }
 
         $httpClient = $this->createHttpClient();
         $httpClient->addHeader('Accept', 'application/json');
+
+        $authMethod = $this->selectAuthMethod($clientSecret, $authMethodsSupported);
+        if ($authMethod === self::AUTH_METHOD_BASIC) {
+            // RFC 6749 §2.3.1: credentials are form-encoded before base64. rawurlencode keeps `~`
+            // literal, so IdPs that skip the decode still accept typical (Entra) secrets.
+            $httpClient->addHeader(
+                'Authorization',
+                'Basic ' . base64_encode(rawurlencode($clientId) . ':' . rawurlencode((string)$clientSecret))
+            );
+        } else {
+            $params['client_id'] = $clientId;
+            if ($authMethod === self::AUTH_METHOD_POST) {
+                $params['client_secret'] = $clientSecret;
+            }
+        }
 
         try {
             $httpClient->post($tokenEndpoint, $params);
@@ -96,6 +115,32 @@ class TokenClient
             $this->stringOrNull($data, 'refresh_token'),
             $this->stringOrNull($data, 'scope')
         );
+    }
+
+    /**
+     * Pick the client authentication method; null for a client without a secret.
+     *
+     * @param string|null $clientSecret
+     * @param string[] $supported
+     * @throws TokenException when the IdP advertises neither secret-based method
+     */
+    private function selectAuthMethod(?string $clientSecret, array $supported): ?string
+    {
+        if ($clientSecret === null || $clientSecret === '') {
+            return null;
+        }
+        // OIDC Discovery §3: an absent list means client_secret_basic.
+        if ($supported === [] || in_array(self::AUTH_METHOD_BASIC, $supported, true)) {
+            return self::AUTH_METHOD_BASIC;
+        }
+        if (in_array(self::AUTH_METHOD_POST, $supported, true)) {
+            return self::AUTH_METHOD_POST;
+        }
+
+        throw new TokenException(sprintf(
+            'The OIDC token endpoint supports neither client_secret_basic nor client_secret_post (advertised: %s).',
+            implode(', ', $supported)
+        ));
     }
 
     /**

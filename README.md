@@ -36,7 +36,9 @@ Scope v1 is **OIDC** (authorization-code + PKCE); SAML is a later phase.
 3. **Callback** — the consumer reloads the state with `consume($state)` (one-time;
    replay-protected).
 4. **Token exchange** — `TokenClient::exchangeCode()` redeems the code with the PKCE
-   verifier at the token endpoint → `TokenResponse` (carries the `id_token`).
+   verifier at the token endpoint → `TokenResponse` (carries the `id_token`). A client secret
+   is sent as `client_secret_basic` unless the discovered `token_endpoint_auth_methods_supported`
+   lists only `client_secret_post`; pass `$metadata->getTokenEndpointAuthMethodsSupported()`.
 5. **ID-token validation** — `JwksClient::getKeySetForToken($jwksUri, $idToken)` resolves
    the JWKS and refetches once when the token's `kid` is unknown (IdP key rotation; at most
    one refetch per 60s cooldown). `IdTokenValidator::validate()` verifies the JWS signature
@@ -112,7 +114,8 @@ $tokens = $tokenClient->exchangeCode(
     $redirectUri,
     $clientId,
     $state->getCodeVerifier(),
-    $clientSecret
+    $clientSecret,
+    $metadata->getTokenEndpointAuthMethodsSupported()
 );
 $claims = $idTokenValidator->validate(
     $tokens->getIdToken(),
