@@ -51,7 +51,8 @@ Scope v1 is **OIDC** (authorization-code + PKCE); SAML is a later phase.
    groups overage) are not resolved: `hasDistributedGroups()` is true and groups are incomplete —
    fail closed.
 7. **Mapping** — `MappingEngine::resolve($groups, $rules, $default)` turns IdP groups
-   into target keys (e.g. Magento role ids).
+   into target keys (e.g. Magento role ids), ordered by `$rules` (configured priority),
+   not by the IdP's group order.
 
 `state` guards CSRF, `nonce` guards replay, PKCE binds the code to the client that
 started the flow.

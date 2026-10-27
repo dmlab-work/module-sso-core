@@ -119,4 +119,26 @@ class MappingEngineTest extends TestCase
 
         self::assertSame(['5', '3'], $result);
     }
+
+    public function testRuleOrderWinsOverIdpGroupOrder(): void
+    {
+        $result = $this->engine->resolve(
+            ['staff', 'admins'],
+            ['admins' => 'administrators', 'staff' => 'general'],
+            'default-role'
+        );
+
+        self::assertSame(['administrators', 'general'], $result);
+    }
+
+    public function testNumericSourceKeysMatch(): void
+    {
+        $result = $this->engine->resolve(
+            ['7', '123'],
+            ['123' => '5', '7' => '3'],
+            '1'
+        );
+
+        self::assertSame(['5', '3'], $result);
+    }
 }

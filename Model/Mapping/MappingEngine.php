@@ -19,28 +19,29 @@ class MappingEngine
     /**
      * Map a set of IdP source values to their target keys.
      *
-     * Each source value found in `$rules` contributes its target key; results
-     * are de-duplicated with first-seen order preserved. When nothing matches,
-     * `$default` is returned as a single-element list, or an empty list when no
-     * default is supplied.
+     * Targets are returned in rule order (the order the rules are configured), not the
+     * order the IdP lists its values, so `[0]` is the highest-priority matching rule.
+     * Results are de-duplicated. When nothing matches, `$default` is returned as a
+     * single-element list, or an empty list when no default is supplied.
      *
      * @param string[] $sourceValues values emitted by the IdP (e.g. group names)
-     * @param array<string,string> $rules source value => target key
+     * @param array<string,string> $rules source value => target key, in priority order
      * @param string|null $default fallback target key when no rule matches
      * @return string[] resolved target keys
      */
     public function resolve(array $sourceValues, array $rules, ?string $default = null): array
     {
+        $present = array_fill_keys(array_map('strval', $sourceValues), true);
+
         $targets = [];
         $seen = [];
-        foreach ($sourceValues as $sourceValue) {
-            $key = (string)$sourceValue;
-            if (!array_key_exists($key, $rules)) {
+        foreach ($rules as $source => $target) {
+            // PHP casts numeric-string keys to int; compare as strings.
+            if (!isset($present[(string)$source])) {
                 continue;
             }
             // Index the seen-set by value, but push the original string target so
             // numeric-like ids (e.g. Magento role "5") keep their string type.
-            $target = $rules[$key];
             if (!isset($seen[$target])) {
                 $seen[$target] = true;
                 $targets[] = $target;
