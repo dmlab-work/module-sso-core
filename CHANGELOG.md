@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Added: `ProviderMetadata::getEndSessionEndpoint()` (discovered `end_session_endpoint`, https only, else `null`).
+- Added: `LogoutUrlBuilder::build()` for OpenID Connect RP-Initiated Logout 1.0 (`id_token_hint`, `client_id`, `post_logout_redirect_uri`, `state`).
+
 ## 0.2.2
 
 ### Breaking
