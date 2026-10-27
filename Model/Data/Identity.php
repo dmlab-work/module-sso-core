@@ -20,6 +20,11 @@ class Identity implements IdentityInterface
     private array $groups;
 
     /**
+     * @var string[]
+     */
+    private array $distributedClaims;
+
+    /**
      * Build the identity value object.
      *
      * @param string $subjectId
@@ -28,6 +33,8 @@ class Identity implements IdentityInterface
      * @param string[] $groups
      * @param bool $emailVerified
      * @param string $issuer
+     * @param string[] $distributedClaims claim names listed in `_claim_names`
+     * @param bool $distributedGroups
      */
     public function __construct(
         private readonly string $subjectId,
@@ -35,9 +42,12 @@ class Identity implements IdentityInterface
         private readonly ?string $name = null,
         array $groups = [],
         private readonly bool $emailVerified = false,
-        private readonly string $issuer = ''
+        private readonly string $issuer = '',
+        array $distributedClaims = [],
+        private readonly bool $distributedGroups = false
     ) {
         $this->groups = array_values(array_map('strval', $groups));
+        $this->distributedClaims = array_values(array_map('strval', $distributedClaims));
     }
 
     /**
@@ -88,5 +98,23 @@ class Identity implements IdentityInterface
     public function getGroups(): array
     {
         return $this->groups;
+    }
+
+    /**
+     * Whether the claim was sent as a distributed/aggregated claim.
+     *
+     * @param string $name
+     */
+    public function hasDistributedClaim(string $name): bool
+    {
+        return in_array($name, $this->distributedClaims, true);
+    }
+
+    /**
+     * Whether the groups claim was sent as a distributed/aggregated claim.
+     */
+    public function hasDistributedGroups(): bool
+    {
+        return $this->distributedGroups;
     }
 }

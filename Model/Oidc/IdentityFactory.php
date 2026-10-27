@@ -18,6 +18,7 @@ use DmLab\SsoCore\Model\Data\Identity;
  * `sub` and `iss` are required; `email` and `name` are optional; groups are read from the
  * preset's configured groups claim and coerced to a `string[]`. Email verification
  * comes from the preset's {@see EmailVerificationResolverInterface}, else `email_verified`.
+ * Claims named in `_claim_names` (distributed/aggregated) are flagged, never resolved.
  */
 class IdentityFactory
 {
@@ -39,13 +40,18 @@ class IdentityFactory
             throw new \InvalidArgumentException('Claim set is missing a usable "iss" claim.');
         }
 
+        $distributedClaims = $this->extractDistributedClaimNames($claims);
+        $groupsClaim = $preset->getGroupsClaim();
+
         return new Identity(
             $subjectId,
             $this->stringOrNull($claims['email'] ?? null),
             $this->stringOrNull($claims['name'] ?? null),
-            $this->extractGroups($claims, $preset->getGroupsClaim()),
+            $this->extractGroups($claims, $groupsClaim),
             $this->resolveEmailVerified($claims, $preset),
-            $issuer
+            $issuer,
+            $distributedClaims,
+            $groupsClaim !== null && in_array($groupsClaim, $distributedClaims, true)
         );
     }
 
@@ -95,6 +101,22 @@ class IdentityFactory
             static fn($group) => (string)$group,
             array_filter($groups, static fn($group) => is_scalar($group))
         ));
+    }
+
+    /**
+     * Claim names the IdP moved out of the token into `_claim_names` (OIDC Core §5.6.2).
+     *
+     * @param array<string,mixed> $claims
+     * @return string[]
+     */
+    private function extractDistributedClaimNames(array $claims): array
+    {
+        $names = $claims['_claim_names'] ?? null;
+        if (!is_array($names)) {
+            return [];
+        }
+
+        return array_map('strval', array_keys($names));
     }
 
     /**

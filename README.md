@@ -45,7 +45,9 @@ Scope v1 is **OIDC** (authorization-code + PKCE); SAML is a later phase.
 6. **Normalization** — `IdentityFactory::create($claims, $preset)` maps `sub`, `iss`,
    `email`, `name`, `email_verified`, and the preset's groups claim into an
    `IdentityInterface`. `sub` is unique only per issuer — bind accounts on
-   (`getIssuer()`, `getSubjectId()`).
+   (`getIssuer()`, `getSubjectId()`). Claims listed in `_claim_names` (distributed, e.g. Entra
+   groups overage) are not resolved: `hasDistributedGroups()` is true and groups are incomplete —
+   fail closed.
 7. **Mapping** — `MappingEngine::resolve($groups, $rules, $default)` turns IdP groups
    into target keys (e.g. Magento role ids).
 
@@ -138,7 +140,7 @@ Stable contracts products depend on. Full method docs live in the interface file
 | `Api/EmailVerificationResolverInterface` | Optional preset: `resolveEmailVerified($claims)` overrides `email_verified` (`null` = standard claim). |
 | `Api/DiscoveryIssuerPolicyInterface` | Optional preset: `requiresIssuerMatch($config)` — `false` skips the §4.3 issuer check. |
 | `Api/AuthorizationParamsProviderInterface` | Optional preset: `getAuthorizationParams($config)` — extra auth params (`hd`, `domain_hint`). |
-| `Api/Data/IdentityInterface` | Provider-agnostic normalized identity (`getSubjectId`, `getIssuer`, `getEmail`, `getName`, `getGroups`, `isEmailVerified`). |
+| `Api/Data/IdentityInterface` | Provider-agnostic normalized identity (`getSubjectId`, `getIssuer`, `getEmail`, `getName`, `getGroups`, `isEmailVerified`, `hasDistributedClaim`, `hasDistributedGroups`). |
 | `Api/AuthorizationStateStorageInterface` | Product-owned persistence of the one-time auth state (`save`, `consume`). |
 | `Api/Data/AuthorizationStateInterface` | The one-time state itself (`getState`, `getNonce`, `getCodeVerifier`). |
 

@@ -130,6 +130,58 @@ class IdentityFactoryTest extends TestCase
         $this->factory->create(['iss' => '', 'sub' => 'okta|123'], $this->preset());
     }
 
+    public function testEntraGroupsOverageIsFlaggedAsDistributed(): void
+    {
+        $identity = $this->factory->create(
+            [
+                'iss' => self::ISSUER,
+                'sub' => 's',
+                '_claim_names' => ['groups' => 'src1'],
+                '_claim_sources' => ['src1' => ['endpoint' => 'https://graph.microsoft.com/v1.0/users/x']],
+            ],
+            $this->preset()
+        );
+
+        self::assertSame([], $identity->getGroups());
+        self::assertTrue($identity->hasDistributedGroups());
+        self::assertTrue($identity->hasDistributedClaim('groups'));
+        self::assertFalse($identity->hasDistributedClaim('email'));
+    }
+
+    public function testDistributedClaimOtherThanGroupsDoesNotFlagGroups(): void
+    {
+        $identity = $this->factory->create(
+            ['iss' => self::ISSUER, 'sub' => 's', 'groups' => ['a'], '_claim_names' => ['roles' => 'src1']],
+            $this->preset()
+        );
+
+        self::assertFalse($identity->hasDistributedGroups());
+        self::assertTrue($identity->hasDistributedClaim('roles'));
+        self::assertSame(['a'], $identity->getGroups());
+    }
+
+    public function testNoGroupsClaimNeverFlagsDistributedGroups(): void
+    {
+        $identity = $this->factory->create(
+            ['iss' => self::ISSUER, 'sub' => 's', '_claim_names' => ['groups' => 'src1']],
+            $this->preset(null)
+        );
+
+        self::assertFalse($identity->hasDistributedGroups());
+        self::assertTrue($identity->hasDistributedClaim('groups'));
+    }
+
+    public function testMalformedClaimNamesAreIgnored(): void
+    {
+        $identity = $this->factory->create(
+            ['iss' => self::ISSUER, 'sub' => 's', '_claim_names' => 'groups'],
+            $this->preset()
+        );
+
+        self::assertFalse($identity->hasDistributedGroups());
+        self::assertFalse($identity->hasDistributedClaim('groups'));
+    }
+
     public function testScalarGroupIsCoercedToStringArray(): void
     {
         $identity = $this->factory->create(

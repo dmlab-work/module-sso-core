@@ -48,4 +48,20 @@ interface IdentityInterface
      * @return string[]
      */
     public function getGroups(): array;
+
+    /**
+     * Whether the IdP sent the claim as a distributed/aggregated claim.
+     *
+     * Listed in `_claim_names` (OIDC Core §5.6.2) instead of inline, so its value is not in the token.
+     *
+     * @param string $name claim name, e.g. `groups`
+     */
+    public function hasDistributedClaim(string $name): bool;
+
+    /**
+     * Whether the preset's groups claim was sent as a distributed claim.
+     *
+     * E.g. Entra groups overage: {@see getGroups()} is then incomplete; consumers should fail closed.
+     */
+    public function hasDistributedGroups(): bool;
 }

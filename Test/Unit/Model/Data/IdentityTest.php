@@ -40,6 +40,23 @@ class IdentityTest extends TestCase
         self::assertSame('', (new Identity('sub-1'))->getIssuer());
     }
 
+    public function testDistributedClaimsDefaultToNone(): void
+    {
+        $identity = new Identity('sub-1');
+
+        self::assertFalse($identity->hasDistributedClaim('groups'));
+        self::assertFalse($identity->hasDistributedGroups());
+    }
+
+    public function testExposesDistributedClaims(): void
+    {
+        $identity = new Identity('sub-1', null, null, [], false, 'iss', ['groups'], true);
+
+        self::assertTrue($identity->hasDistributedClaim('groups'));
+        self::assertFalse($identity->hasDistributedClaim('roles'));
+        self::assertTrue($identity->hasDistributedGroups());
+    }
+
     public function testEmailAndNameDefaultToNull(): void
     {
         $identity = new Identity('sub-1');
