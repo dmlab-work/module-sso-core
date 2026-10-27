@@ -22,6 +22,7 @@ class ProviderMetadata
      * @param string[] $tokenEndpointAuthMethodsSupported
      * @param string[] $idTokenSigningAlgValuesSupported
      * @param bool $authorizationResponseIssParameterSupported
+     * @param string|null $endSessionEndpoint
      */
     public function __construct(
         private readonly string $issuer,
@@ -30,7 +31,8 @@ class ProviderMetadata
         private readonly string $jwksUri,
         private readonly array $tokenEndpointAuthMethodsSupported = [],
         private readonly array $idTokenSigningAlgValuesSupported = [],
-        private readonly bool $authorizationResponseIssParameterSupported = false
+        private readonly bool $authorizationResponseIssParameterSupported = false,
+        private readonly ?string $endSessionEndpoint = null
     ) {
     }
 
@@ -92,5 +94,13 @@ class ProviderMetadata
     public function isAuthorizationResponseIssParameterSupported(): bool
     {
         return $this->authorizationResponseIssParameterSupported;
+    }
+
+    /**
+     * Get the RP-Initiated Logout `end_session_endpoint`; null when not advertised.
+     */
+    public function getEndSessionEndpoint(): ?string
+    {
+        return $this->endSessionEndpoint;
     }
 }

@@ -339,6 +339,40 @@ class DiscoveryClientTest extends TestCase
         self::assertSame([], $metadata->getIdTokenSigningAlgValuesSupported());
     }
 
+    public function testParsesEndSessionEndpoint(): void
+    {
+        $http = $this->httpReturning(
+            $this->document(['end_session_endpoint' => 'https://dev.okta.com/oauth2/v1/logout'])
+        );
+
+        $metadata = $this->client($http, $this->coldCache())->discover(self::URL);
+
+        self::assertSame('https://dev.okta.com/oauth2/v1/logout', $metadata->getEndSessionEndpoint());
+    }
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function invalidEndSessionEndpoints(): array
+    {
+        return [
+            'absent' => [null],
+            'http' => ['http://dev.okta.com/oauth2/v1/logout'],
+            'not a string' => [['https://dev.okta.com/oauth2/v1/logout']],
+            'empty' => [''],
+        ];
+    }
+
+    #[DataProvider('invalidEndSessionEndpoints')]
+    public function testIgnoresInvalidEndSessionEndpoint(mixed $value): void
+    {
+        $document = $value === null ? $this->document() : $this->document(['end_session_endpoint' => $value]);
+
+        $metadata = $this->client($this->httpReturning($document), $this->coldCache())->discover(self::URL);
+
+        self::assertNull($metadata->getEndSessionEndpoint());
+    }
+
     private function httpReturning(string $body): ClientInterface
     {
         $http = $this->createStub(ClientInterface::class);

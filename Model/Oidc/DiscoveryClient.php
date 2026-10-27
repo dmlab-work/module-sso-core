@@ -179,7 +179,8 @@ class DiscoveryClient
             $data['jwks_uri'],
             $this->stringList($data, 'token_endpoint_auth_methods_supported'),
             $this->stringList($data, 'id_token_signing_alg_values_supported'),
-            ($data['authorization_response_iss_parameter_supported'] ?? false) === true
+            ($data['authorization_response_iss_parameter_supported'] ?? false) === true,
+            $this->optionalHttpsUrl($data, 'end_session_endpoint')
         );
     }
 
@@ -198,6 +199,19 @@ class DiscoveryClient
         }
 
         return array_values(array_filter($value, static fn($item) => is_string($item) && $item !== ''));
+    }
+
+    /**
+     * Read an optional endpoint URL; a non-string or non-HTTPS value is ignored (null).
+     *
+     * @param array<string,mixed> $data
+     * @param string $key
+     */
+    private function optionalHttpsUrl(array $data, string $key): ?string
+    {
+        $value = $data[$key] ?? null;
+
+        return is_string($value) && str_starts_with(strtolower($value), 'https://') ? $value : null;
     }
 
     /**

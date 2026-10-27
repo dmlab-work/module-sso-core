@@ -26,7 +26,7 @@ Scope v1 is **OIDC** (authorization-code + PKCE); SAML is a later phase.
 1. **Discovery** — `DiscoveryClient::discover($url, $requireIssuerMatch = true)` fetches
    (and caches) `.well-known/openid-configuration` → `ProviderMetadata` (issuer,
    authorization, token, JWKS endpoints, advertised auth methods / signing algs / RFC 9207
-   support). The `issuer` must be https without query/fragment. Per OIDC Discovery §4.3 it
+   support, optional `end_session_endpoint` — `null` unless https). The `issuer` must be https without query/fragment. Per OIDC Discovery §4.3 it
    (minus a trailing `/`) must equal the URL prefix before `/.well-known/openid-configuration`
    — other URLs are rejected; pass `false` when the preset's `DiscoveryIssuerPolicyInterface`
    opts out (e.g. Entra domain tenant).
@@ -60,6 +60,11 @@ Scope v1 is **OIDC** (authorization-code + PKCE); SAML is a later phase.
 7. **Mapping** — `MappingEngine::resolve($groups, $rules, $default)` turns IdP groups
    into target keys (e.g. Magento role ids), ordered by `$rules` (configured priority),
    not by the IdP's group order.
+
+**Logout** (RP-Initiated Logout 1.0) — keep the raw `id_token` from step 4; on logout, if
+`$metadata->getEndSessionEndpoint()` is set, redirect to `LogoutUrlBuilder::build($endpoint,
+$idToken, $clientId, $postLogoutRedirectUri, $state = null)` (empty params omitted; the
+redirect URI must be registered at the IdP).
 
 `state` guards CSRF, `nonce` guards replay, PKCE binds the code to the client that
 started the flow.
