@@ -21,6 +21,13 @@ interface IdentityInterface
     public function getSubjectId(): string;
 
     /**
+     * Issuer identifier of the IdP that asserted the identity (the validated `iss` claim).
+     *
+     * `sub` is unique only per issuer: bind accounts on the (issuer, subject) pair.
+     */
+    public function getIssuer(): string;
+
+    /**
      * Email address, or null when the IdP did not release it.
      */
     public function getEmail(): ?string;

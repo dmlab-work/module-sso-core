@@ -28,6 +28,18 @@ class IdentityTest extends TestCase
         self::assertSame(['admins', 'staff'], $identity->getGroups());
     }
 
+    public function testExposesIssuer(): void
+    {
+        $identity = new Identity('sub-1', null, null, [], false, 'https://dev.okta.com');
+
+        self::assertSame('https://dev.okta.com', $identity->getIssuer());
+    }
+
+    public function testIssuerDefaultsToEmpty(): void
+    {
+        self::assertSame('', (new Identity('sub-1'))->getIssuer());
+    }
+
     public function testEmailAndNameDefaultToNull(): void
     {
         $identity = new Identity('sub-1');

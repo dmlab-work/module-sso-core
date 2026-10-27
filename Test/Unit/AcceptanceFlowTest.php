@@ -102,6 +102,7 @@ class AcceptanceFlowTest extends TestCase
         // 3. Normalize the validated claims into a provider-agnostic Identity.
         $identity = (new IdentityFactory())->create($claims, $preset);
         self::assertSame('okta-user-42', $identity->getSubjectId());
+        self::assertSame(self::ISSUER, $identity->getIssuer());
         self::assertSame('jane@example.com', $identity->getEmail());
         self::assertSame('Jane Doe', $identity->getName());
         self::assertSame(['Admins', 'Everyone'], $identity->getGroups());

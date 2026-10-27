@@ -15,7 +15,7 @@ use DmLab\SsoCore\Model\Data\Identity;
 /**
  * Normalizes a validated OIDC claim set into a provider-agnostic {@see Identity}.
  *
- * `sub` is required; `email` and `name` are optional; groups are read from the
+ * `sub` and `iss` are required; `email` and `name` are optional; groups are read from the
  * preset's configured groups claim and coerced to a `string[]`. Email verification
  * comes from the preset's {@see EmailVerificationResolverInterface}, else `email_verified`.
  */
@@ -26,7 +26,7 @@ class IdentityFactory
      *
      * @param array<string,mixed> $claims validated ID-token claims
      * @param ProviderPresetInterface $preset
-     * @throws \InvalidArgumentException when the mandatory `sub` claim is absent
+     * @throws \InvalidArgumentException when the mandatory `sub` or `iss` claim is absent
      */
     public function create(array $claims, ProviderPresetInterface $preset): IdentityInterface
     {
@@ -34,13 +34,18 @@ class IdentityFactory
         if ($subjectId === null || $subjectId === '') {
             throw new \InvalidArgumentException('Claim set is missing a usable "sub" claim.');
         }
+        $issuer = $this->stringOrNull($claims['iss'] ?? null);
+        if ($issuer === null || $issuer === '') {
+            throw new \InvalidArgumentException('Claim set is missing a usable "iss" claim.');
+        }
 
         return new Identity(
             $subjectId,
             $this->stringOrNull($claims['email'] ?? null),
             $this->stringOrNull($claims['name'] ?? null),
             $this->extractGroups($claims, $preset->getGroupsClaim()),
-            $this->resolveEmailVerified($claims, $preset)
+            $this->resolveEmailVerified($claims, $preset),
+            $issuer
         );
     }
 

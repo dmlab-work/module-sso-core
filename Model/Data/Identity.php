@@ -27,13 +27,15 @@ class Identity implements IdentityInterface
      * @param string|null $name
      * @param string[] $groups
      * @param bool $emailVerified
+     * @param string $issuer
      */
     public function __construct(
         private readonly string $subjectId,
         private readonly ?string $email = null,
         private readonly ?string $name = null,
         array $groups = [],
-        private readonly bool $emailVerified = false
+        private readonly bool $emailVerified = false,
+        private readonly string $issuer = ''
     ) {
         $this->groups = array_values(array_map('strval', $groups));
     }
@@ -44,6 +46,14 @@ class Identity implements IdentityInterface
     public function getSubjectId(): string
     {
         return $this->subjectId;
+    }
+
+    /**
+     * Get the issuer identifier.
+     */
+    public function getIssuer(): string
+    {
+        return $this->issuer;
     }
 
     /**

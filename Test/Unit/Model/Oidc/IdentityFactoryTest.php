@@ -15,6 +15,8 @@ use PHPUnit\Framework\TestCase;
 
 class IdentityFactoryTest extends TestCase
 {
+    private const ISSUER = 'https://dev.okta.com';
+
     /**
      * @var IdentityFactory
      */
@@ -73,6 +75,7 @@ class IdentityFactoryTest extends TestCase
     {
         $identity = $this->factory->create(
             [
+                'iss' => self::ISSUER,
                 'sub' => 'okta|123',
                 'email' => 'jane@example.com',
                 'name' => 'Jane Doe',
@@ -82,6 +85,7 @@ class IdentityFactoryTest extends TestCase
         );
 
         self::assertSame('okta|123', $identity->getSubjectId());
+        self::assertSame(self::ISSUER, $identity->getIssuer());
         self::assertSame('jane@example.com', $identity->getEmail());
         self::assertSame('Jane Doe', $identity->getName());
         self::assertSame(['admins', 'staff'], $identity->getGroups());
@@ -89,7 +93,7 @@ class IdentityFactoryTest extends TestCase
 
     public function testEmailNameAndGroupsDefaultWhenAbsent(): void
     {
-        $identity = $this->factory->create(['sub' => 'okta|123'], $this->preset());
+        $identity = $this->factory->create(['iss' => self::ISSUER, 'sub' => 'okta|123'], $this->preset());
 
         self::assertSame('okta|123', $identity->getSubjectId());
         self::assertNull($identity->getEmail());
@@ -101,20 +105,35 @@ class IdentityFactoryTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        $this->factory->create(['email' => 'jane@example.com'], $this->preset());
+        $this->factory->create(['iss' => self::ISSUER, 'email' => 'jane@example.com'], $this->preset());
     }
 
     public function testEmptySubjectIsRejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        $this->factory->create(['sub' => ''], $this->preset());
+        $this->factory->create(['iss' => self::ISSUER, 'sub' => ''], $this->preset());
+    }
+
+    public function testMissingIssuerIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('"iss"');
+
+        $this->factory->create(['sub' => 'okta|123'], $this->preset());
+    }
+
+    public function testEmptyIssuerIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->factory->create(['iss' => '', 'sub' => 'okta|123'], $this->preset());
     }
 
     public function testScalarGroupIsCoercedToStringArray(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'groups' => 'admins'],
+            ['iss' => self::ISSUER, 'sub' => 's', 'groups' => 'admins'],
             $this->preset()
         );
 
@@ -124,7 +143,7 @@ class IdentityFactoryTest extends TestCase
     public function testGroupValuesAreStringifiedAndReindexed(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'groups' => [3 => 42, 7 => 'staff']],
+            ['iss' => self::ISSUER, 'sub' => 's', 'groups' => [3 => 42, 7 => 'staff']],
             $this->preset()
         );
 
@@ -134,7 +153,7 @@ class IdentityFactoryTest extends TestCase
     public function testNestedArrayGroupMembersAreSkipped(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'groups' => ['admins', ['nested'], 'staff']],
+            ['iss' => self::ISSUER, 'sub' => 's', 'groups' => ['admins', ['nested'], 'staff']],
             $this->preset()
         );
 
@@ -144,7 +163,7 @@ class IdentityFactoryTest extends TestCase
     public function testNullGroupsClaimYieldsEmptyGroups(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'groups' => ['admins']],
+            ['iss' => self::ISSUER, 'sub' => 's', 'groups' => ['admins']],
             $this->preset(null)
         );
 
@@ -154,7 +173,7 @@ class IdentityFactoryTest extends TestCase
     public function testGroupsClaimPointingToNullValueYieldsEmptyGroups(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'groups' => null],
+            ['iss' => self::ISSUER, 'sub' => 's', 'groups' => null],
             $this->preset()
         );
 
@@ -164,7 +183,7 @@ class IdentityFactoryTest extends TestCase
     public function testCustomGroupsClaimName(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'roles' => ['a', 'b'], 'groups' => ['ignored']],
+            ['iss' => self::ISSUER, 'sub' => 's', 'roles' => ['a', 'b'], 'groups' => ['ignored']],
             $this->preset('roles')
         );
 
@@ -193,7 +212,7 @@ class IdentityFactoryTest extends TestCase
     public function testEmailVerifiedClaimNormalization(mixed $claim, bool $expected): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => $claim],
+            ['iss' => self::ISSUER, 'sub' => 's', 'email' => 'jane@example.com', 'email_verified' => $claim],
             $this->preset()
         );
 
@@ -202,14 +221,20 @@ class IdentityFactoryTest extends TestCase
 
     public function testEmailVerifiedAbsentIsFalse(): void
     {
-        $identity = $this->factory->create(['sub' => 's', 'email' => 'jane@example.com'], $this->preset());
+        $identity = $this->factory->create(
+            ['iss' => self::ISSUER, 'sub' => 's', 'email' => 'jane@example.com'],
+            $this->preset()
+        );
 
         self::assertFalse($identity->isEmailVerified());
     }
 
     public function testEmailVerifiedWithoutEmailIsFalse(): void
     {
-        $identity = $this->factory->create(['sub' => 's', 'email_verified' => true], $this->preset());
+        $identity = $this->factory->create(
+            ['iss' => self::ISSUER, 'sub' => 's', 'email_verified' => true],
+            $this->preset()
+        );
 
         self::assertFalse($identity->isEmailVerified());
     }
@@ -217,7 +242,7 @@ class IdentityFactoryTest extends TestCase
     public function testResolverTrueOverridesStandardClaim(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => false],
+            ['iss' => self::ISSUER, 'sub' => 's', 'email' => 'jane@example.com', 'email_verified' => false],
             $this->resolvingPreset(true)
         );
 
@@ -227,7 +252,7 @@ class IdentityFactoryTest extends TestCase
     public function testResolverFalseOverridesStandardClaim(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => true],
+            ['iss' => self::ISSUER, 'sub' => 's', 'email' => 'jane@example.com', 'email_verified' => true],
             $this->resolvingPreset(false)
         );
 
@@ -237,7 +262,7 @@ class IdentityFactoryTest extends TestCase
     public function testResolverNullFallsBackToStandardClaim(): void
     {
         $identity = $this->factory->create(
-            ['sub' => 's', 'email' => 'jane@example.com', 'email_verified' => true],
+            ['iss' => self::ISSUER, 'sub' => 's', 'email' => 'jane@example.com', 'email_verified' => true],
             $this->resolvingPreset(null)
         );
 
@@ -247,7 +272,7 @@ class IdentityFactoryTest extends TestCase
     public function testResolverReceivesClaims(): void
     {
         $preset = $this->resolvingPreset(true);
-        $claims = ['sub' => 's', 'email' => 'jane@example.com', 'xms_edov' => true];
+        $claims = ['iss' => self::ISSUER, 'sub' => 's', 'email' => 'jane@example.com', 'xms_edov' => true];
 
         $this->factory->create($claims, $preset);
 
@@ -256,7 +281,7 @@ class IdentityFactoryTest extends TestCase
 
     public function testResolverTrueWithoutEmailIsFalse(): void
     {
-        $identity = $this->factory->create(['sub' => 's'], $this->resolvingPreset(true));
+        $identity = $this->factory->create(['iss' => self::ISSUER, 'sub' => 's'], $this->resolvingPreset(true));
 
         self::assertFalse($identity->isEmailVerified());
     }
