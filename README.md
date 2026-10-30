@@ -4,11 +4,40 @@
 
 [![CI](https://github.com/dmlab-work/module-sso-core/actions/workflows/ci.yml/badge.svg)](https://github.com/dmlab-work/module-sso-core/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/dmlab-work/module-sso-core/graph/badge.svg)](https://codecov.io/gh/dmlab-work/module-sso-core) [![Packagist Version](https://img.shields.io/packagist/v/dmlab/module-sso-core)](https://packagist.org/packages/dmlab/module-sso-core) [![Downloads](https://img.shields.io/packagist/dt/dmlab/module-sso-core)](https://packagist.org/packages/dmlab/module-sso-core) [![PHP](https://img.shields.io/packagist/dependency-v/dmlab/module-sso-core/php)](https://packagist.org/packages/dmlab/module-sso-core) [![License](https://img.shields.io/packagist/l/dmlab/module-sso-core)](LICENSE) ![Magento](https://img.shields.io/badge/Magento-2.4-orange)
 
-The shared OIDC/SSO engine for the DMLab identity suite. It is installed
-transitively by every login product (`admin-sso-okta`, `customer-sso-okta`, ...),
-so you rarely require it directly.
+Nobody installs this module directly: it comes with Admin SSO and Customer SSO and their provider
+plugins (Okta, Microsoft Entra ID, Google). It does the sign-in work behind their login buttons — talks to
+your company's identity provider, checks the sign-in is genuine, and hands back who the user is and which
+groups they are in. Those modules map the groups to admin roles or customer groups.
 
-## What it provides
+![The Admin SSO settings screen](.github/images/admin-sso-config.png)
+*The Admin SSO settings screen — sign-in behind it runs on this engine.*
+
+## Install
+
+Install a login module; it pulls this engine:
+
+```bash
+composer require dmlab/module-admin-sso-okta      # or dmlab/module-customer-sso-okta
+bin/magento module:enable DmLab_SsoCore DmLab_AdminSso DmLab_AdminSsoOkta
+bin/magento setup:upgrade
+```
+
+For the storefront: `bin/magento module:enable DmLab_SsoCore DmLab_CustomerSso DmLab_CustomerSsoOkta`.
+
+Building your own login module? Require the engine directly: `composer require dmlab/module-sso-core`.
+
+## Requirements
+
+- Magento 2.4.7+ · PHP 8.2–8.5
+- `ext-curl`; outbound HTTPS from Magento to the identity provider
+- `ext-sodium` (optional) for EdDSA-signed ID tokens
+- `web-token/jwt-framework ^3.4.10 || ~4.0.7 || ^4.1.7`
+
+Pairs with [Admin SSO](https://github.com/dmlab-work/module-admin-sso) · [Customer SSO](https://github.com/dmlab-work/module-customer-sso).
+
+## Architecture
+
+### What it provides
 
 Ships **protocol only** — no UI, no config, no secret storage. Products own
 configuration and supply a small `ProviderPreset`; the engine does the OIDC work.
@@ -21,7 +50,7 @@ Scope v1 is **OIDC** (authorization-code + PKCE); SAML is a later phase.
   claim, branding) stay in a provider plugin module — one engine serves any
   compliant IdP.
 
-## OIDC flow
+### OIDC flow
 
 1. **Discovery** — `DiscoveryClient::discover($url, $requireIssuerMatch = true)` fetches
    (and caches) `.well-known/openid-configuration` → `ProviderMetadata` (issuer,
@@ -73,7 +102,7 @@ Outbound HTTP (discovery, JWKS, token) uses a fresh HTTPS-only client per reques
 5s connect / 10s total timeout — override `connectTimeout`, `timeout`, `refetchCooldown`
 (JWKS) via `etc/di.xml` arguments; `IdTokenValidator`'s `maxIatAge` likewise (`0` disables).
 
-## The ProviderPreset contract
+### The ProviderPreset contract
 
 `Api/ProviderPresetInterface` is the only IdP-specific surface. A provider plugin
 module (e.g. `admin-sso-okta`) implements it and registers the preset into the
@@ -92,13 +121,7 @@ Optional capabilities are separate interfaces a preset may also implement (see P
 | `getButtonLabel()` | Login-button label. |
 | `getButtonIconUrl()` | Login-button icon URL, or `null`. |
 
-## How products consume the engine
-
-Install pulls the core transitively:
-
-```
-composer require dmlab/module-admin-sso-okta   # pulls dmlab/module-sso-core
-```
+### How products consume the engine
 
 A product wires the flow using only the public surface — build the auth URL from
 its preset, validate the ID token, normalize an Identity, map groups:
@@ -147,7 +170,7 @@ The engine never stores secrets — the product passes already-resolved client
 id/secret and owns the `AuthorizationStateStorageInterface` implementation (session,
 cache, ...).
 
-## Public API (`Api/`)
+### Public API (`Api/`)
 
 Stable contracts products depend on. Full method docs live in the interface files.
 
@@ -160,22 +183,6 @@ Stable contracts products depend on. Full method docs live in the interface file
 | `Api/Data/IdentityInterface` | Provider-agnostic normalized identity (`getSubjectId`, `getIssuer`, `getEmail`, `getName`, `getGroups`, `isEmailVerified`, `hasDistributedClaim`, `hasDistributedGroups`). |
 | `Api/AuthorizationStateStorageInterface` | Product-owned persistence of the one-time auth state (`save`, `consume`). |
 | `Api/Data/AuthorizationStateInterface` | The one-time state itself (`getState`, `getNonce`, `getCodeVerifier`, `getIssuer`). |
-
-## Requirements
-
-- Magento Open Source / Adobe Commerce **2.4.x** (tested on 2.4.9)
-- PHP **8.3 – 8.5** with `ext-curl`
-- `magento/framework >=103.0`
-- `web-token/jwt-framework ^4.0`
-
-## Part of the DMLab identity suite
-
-| Repo | Role |
-|------|------|
-| `sso-core` | Shared OIDC engine (installed automatically) |
-| `admin-sso` · `admin-sso-<idp>` | Admin-panel SSO login |
-| `customer-sso` · `customer-sso-<idp>` | Storefront SSO login |
-| `admin-scim` · `admin-scim-<idp>` | Admin-user provisioning (SCIM 2.0) |
 
 ## License
 
