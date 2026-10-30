@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4
+
+- Supports Magento 2.4.7+ and PHP 8.2–8.5: `magento/framework` `^103.0.7`, `web-token/jwt-framework` `^3.4.10||~4.0.7||^4.1.7`.
+- `web-token/jwt-framework` floor excludes versions with known advisories (`<3.4.10`, `4.0.0–4.0.6`, `4.1.0–4.1.6`).
+- CI runs PHP 8.2–8.5 and no longer notifies Packagist on install.
+- composer.json: keywords, homepage, support links.
+- README: plain intro, screenshot, install and requirements first; protocol detail under Architecture.
+
 ## 0.2.3
 
 - Added: `ProviderMetadata::getEndSessionEndpoint()` (discovered `end_session_endpoint`, https only, else `null`).
